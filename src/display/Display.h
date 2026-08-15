@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include <Arduino_GFX_Library.h>
+#include <TFT_eSPI.h>
 #include "FriendBoxCore.h"
 
 namespace friendbox::display {
@@ -25,8 +25,7 @@ public:
     void fatal(const String& message);
 
 private:
-    Arduino_DataBus* _bus{nullptr};
-    Arduino_GFX* _gfx{nullptr};
+    TFT_eSPI _gfx;
 
     void title(const String& text, uint16_t accent);
     void footer(const String& text);

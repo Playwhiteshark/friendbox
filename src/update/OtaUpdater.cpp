@@ -49,7 +49,7 @@ esp_err_t firmwareEvent(esp_http_client_event_t* event) {
         return ESP_FAIL;
     }
     if (esp_ota_write(ctx->handle, event->data, event->data_len) != ESP_OK ||
-        mbedtls_sha256_update(&ctx->sha,
+        mbedtls_sha256_update_ret(&ctx->sha,
                               reinterpret_cast<const unsigned char*>(event->data),
                               event->data_len) != 0) {
         ctx->failed = true;
@@ -147,7 +147,7 @@ bool OtaUpdater::fetchManifest(String& version, String& url, String& sha256, siz
     esp_http_client_config_t cfg{};
     cfg.url = manifestUrl.c_str();
     cfg.timeout_ms = 15000;
-    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    cfg.crt_bundle_attach = arduino_esp_crt_bundle_attach;
     cfg.event_handler = manifestEvent;
     cfg.user_data = &context;
 
@@ -180,7 +180,7 @@ bool OtaUpdater::installFirmware(const String& url, const String& expectedSha256
     FirmwareContext context;
     context.limit = expectedSize;
     mbedtls_sha256_init(&context.sha);
-    if (mbedtls_sha256_starts(&context.sha, 0) != 0) {
+    if (mbedtls_sha256_starts_ret(&context.sha, 0) != 0) {
         mbedtls_sha256_free(&context.sha);
         return false;
     }
@@ -192,7 +192,7 @@ bool OtaUpdater::installFirmware(const String& url, const String& expectedSha256
     esp_http_client_config_t cfg{};
     cfg.url = url.c_str();
     cfg.timeout_ms = 20000;
-    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    cfg.crt_bundle_attach = arduino_esp_crt_bundle_attach;
     cfg.event_handler = firmwareEvent;
     cfg.user_data = &context;
 
@@ -208,7 +208,7 @@ bool OtaUpdater::installFirmware(const String& url, const String& expectedSha256
     esp_http_client_cleanup(client);
 
     unsigned char digest[32]{};
-    const bool shaFinished = mbedtls_sha256_finish(&context.sha, digest) == 0;
+    const bool shaFinished = mbedtls_sha256_finish_ret(&context.sha, digest) == 0;
     mbedtls_sha256_free(&context.sha);
     const String actualSha = digestToHex(digest);
 

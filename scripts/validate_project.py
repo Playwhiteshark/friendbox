@@ -29,7 +29,7 @@ pio = (ROOT / "platformio.ini").read_text(encoding="utf-8")
 for expected in [
     "espressif32@7.0.1",
     "lilygo-t-display-s3",
-    "GFX Library for Arduino@1.6.6",
+    "TFT_eSPI@2.5.43",
     "WiFiManager@2.0.17",
     "ArduinoJson@7.4.3",
     "espMqttClient@1.7.3",
