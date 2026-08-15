@@ -10,6 +10,7 @@ const char kHead[] = R"HTML(
 body{background:#0c0f12;color:#eef3f6;font-family:system-ui,-apple-system,sans-serif}
 .wrap{max-width:430px}button,.btn{border-radius:10px}input{border-radius:8px}
 h1,h2,h3{letter-spacing:.04em}.msg{color:#9deff2}
+details{margin:1rem 0}summary{cursor:pointer}
 </style>
 <script>
 document.addEventListener('DOMContentLoaded',function(){
@@ -24,6 +25,15 @@ int16_t parseOffset(const String& value, int16_t fallback) {
     const long parsed = value.toInt();
     if (parsed < -840 || parsed > 840) return fallback;
     return static_cast<int16_t>(parsed);
+}
+
+uint16_t parsePort(const String& value, uint16_t fallback) {
+    String trimmed = value;
+    trimmed.trim();
+    if (trimmed.isEmpty()) return fallback;
+    const long parsed = trimmed.toInt();
+    if (parsed < 1 || parsed > 65535) return fallback;
+    return static_cast<uint16_t>(parsed);
 }
 }
 
@@ -45,12 +55,18 @@ SetupResult SetupPortal::run(config::DeviceConfig& config, bool forced) {
     WiFiManagerParameter pName("name", "Your name", current.displayName.c_str(), 25);
     WiFiManagerParameter pGroup("group", "Room code (blank = create)", current.groupCode.c_str(), 7);
     WiFiManagerParameter pGroupPass("gpass", "Room password (blank = create)", current.groupPassword.c_str(), 7, "type='password'");
-    WiFiManagerParameter pAdvancedOpen("<details open><summary><b>Service settings</b></summary><p>Required on first setup; normally leave unchanged later.</p>");
+
+    // Service settings are available for maintenance, but kept out of the
+    // normal setup flow. Never render the saved MQTT password back into HTML.
+    WiFiManagerParameter pAdvancedOpen(
+        "<details><summary><b>Advanced service settings</b></summary>"
+        "<p>Normally leave these unchanged. Leave MQTT password blank to keep the saved password.</p>");
     WiFiManagerParameter pHost("mhost", "MQTT host", current.mqttHost.c_str(), 96);
     WiFiManagerParameter pPort("mport", "MQTT TLS port", port, 6);
     WiFiManagerParameter pUser("muser", "MQTT username", current.mqttUsername.c_str(), 64);
-    WiFiManagerParameter pPass("mpass", "MQTT password", current.mqttPassword.c_str(), 96, "type='password'");
+    WiFiManagerParameter pPass("mpass", "MQTT password", "", 96, "type='password' autocomplete='new-password'");
     WiFiManagerParameter pAdvancedClose("</details>");
+
     WiFiManagerParameter pAccent("accent", "Accent color", core::accentName(current.accent), 10,
                                  "list='friendbox-accents' autocomplete='off'");
     WiFiManagerParameter pAccentOptions(
@@ -78,9 +94,15 @@ SetupResult SetupPortal::run(config::DeviceConfig& config, bool forced) {
     current.displayName.trim();
     current.mqttHost = String(pHost.getValue());
     current.mqttHost.trim();
-    current.mqttPort = static_cast<uint16_t>(constrain(String(pPort.getValue()).toInt(), 1L, 65535L));
+    current.mqttPort = parsePort(String(pPort.getValue()), current.mqttPort);
     current.mqttUsername = String(pUser.getValue());
-    current.mqttPassword = String(pPass.getValue());
+    current.mqttUsername.trim();
+
+    // Blank means "keep the secret already in NVS". This is important both
+    // for locally provisioned boxes and for later maintenance visits.
+    String submittedPassword = String(pPass.getValue());
+    if (!submittedPassword.isEmpty()) current.mqttPassword = submittedPassword;
+
     current.utcOffsetMinutes = parseOffset(String(pTz.getValue()), current.utcOffsetMinutes);
     current.accent = core::parseAccent(String(pAccent.getValue()).c_str(), current.accent);
 

@@ -1,43 +1,66 @@
 #include "DeviceConfig.h"
 
 #include <esp_system.h>
+#include "ServiceConfig.h"
 #include "util/Hash.h"
 
 namespace friendbox::config {
 namespace {
 constexpr const char* kNamespace = "fbconfig";
 constexpr const char* kRoomAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+// NVS keys are intentionally centralized here and kept below NVS's 15-char
+// key-name limit.
+constexpr const char* kDeviceKey = "device";
+constexpr const char* kNameKey = "name";
+constexpr const char* kGroupKey = "group";
+constexpr const char* kGroupPasswordKey = "gpass";
+constexpr const char* kRoomTokenKey = "room";
+constexpr const char* kMqttHostKey = "mhost";
+constexpr const char* kMqttPortKey = "mport";
+constexpr const char* kMqttUserKey = "muser";
+constexpr const char* kMqttPasswordKey = "mpass";
+constexpr const char* kServiceInitializedKey = "svcinit";
+constexpr const char* kTimezoneKey = "tz";
+constexpr const char* kAccentKey = "accent";
+constexpr const char* kOutgoingCounterKey = "outctr";
 }
 
 bool DeviceConfig::begin() {
     if (!_prefs.begin(kNamespace, false)) return false;
 
-    _settings.deviceId = _prefs.getString("device", "");
+    _settings.deviceId = _prefs.getString(kDeviceKey, "");
     if (_settings.deviceId.isEmpty()) {
         _settings.deviceId = makeDeviceId();
-        _prefs.putString("device", _settings.deviceId);
+        _prefs.putString(kDeviceKey, _settings.deviceId);
     }
 
-    _settings.displayName = _prefs.getString("name", "");
-    _settings.groupCode = _prefs.getString("group", "");
-    _settings.groupPassword = _prefs.getString("gpass", "");
-    _settings.roomToken = _prefs.getString("room", "");
-    _settings.mqttHost = _prefs.getString("mhost", "");
-    _settings.mqttPort = _prefs.getUShort("mport", 8883);
-    _settings.mqttUsername = _prefs.getString("muser", "");
-    _settings.mqttPassword = _prefs.getString("mpass", "");
-    _settings.utcOffsetMinutes = _prefs.getShort("tz", 0);
-    _settings.accent = static_cast<core::Accent>(_prefs.getUChar("accent", 0));
+    _settings.displayName = _prefs.getString(kNameKey, "");
+    _settings.groupCode = _prefs.getString(kGroupKey, "");
+    _settings.groupPassword = _prefs.getString(kGroupPasswordKey, "");
+    _settings.roomToken = _prefs.getString(kRoomTokenKey, "");
+    _settings.mqttHost = _prefs.getString(kMqttHostKey, "");
+    _settings.mqttPort = _prefs.getUShort(kMqttPortKey, service::kDefaultMqttTlsPort);
+    _settings.mqttUsername = _prefs.getString(kMqttUserKey, "");
+    _settings.mqttPassword = _prefs.getString(kMqttPasswordKey, "");
+    _settings.utcOffsetMinutes = _prefs.getShort(kTimezoneKey, 0);
+    _settings.accent = static_cast<core::Accent>(_prefs.getUChar(kAccentKey, 0));
     if (static_cast<uint8_t>(_settings.accent) >= static_cast<uint8_t>(core::Accent::Count)) {
         _settings.accent = core::Accent::Cyan;
     }
-    _outCounter = _prefs.getUInt("outctr", 0);
+    _outCounter = _prefs.getUInt(kOutgoingCounterKey, 0);
+
+    // Migration-safe bootstrap behavior:
+    // - existing NVS service values always win;
+    // - local private defaults seed only a never-configured device;
+    // - once seeded/configured, future firmware images cannot overwrite them.
+    if (!seedLocalServiceDefaultsIfNeeded()) return false;
 
     if (core::validGroupCode(_settings.groupCode.c_str()) &&
         core::validGroupPassword(_settings.groupPassword.c_str())) {
         const String storedToken = _settings.roomToken;
         if (deriveRoomToken() && _settings.roomToken != storedToken) {
-            _prefs.putString("room", _settings.roomToken);
+            _prefs.putString(kRoomTokenKey, _settings.roomToken);
         }
     } else {
         _settings.roomToken = "";
@@ -52,19 +75,65 @@ String DeviceConfig::makeDeviceId() {
     return String(id);
 }
 
+bool DeviceConfig::hasMeaningfulStoredServiceSettings() const {
+    // A saved port by itself is not meaningful; older FriendBox builds always
+    // had a default port value, so it must not block first-time provisioning.
+    return !_settings.mqttHost.isEmpty() ||
+           !_settings.mqttUsername.isEmpty() ||
+           !_settings.mqttPassword.isEmpty();
+}
+
+bool DeviceConfig::saveServiceSettings() {
+    bool ok = true;
+    ok &= _prefs.putString(kMqttHostKey, _settings.mqttHost) > 0 || _settings.mqttHost.isEmpty();
+    ok &= _prefs.putUShort(kMqttPortKey, _settings.mqttPort) > 0;
+    ok &= _prefs.putString(kMqttUserKey, _settings.mqttUsername) > 0 || _settings.mqttUsername.isEmpty();
+    ok &= _prefs.putString(kMqttPasswordKey, _settings.mqttPassword) > 0 || _settings.mqttPassword.isEmpty();
+
+    // Mark service configuration as initialized only when there is actual
+    // service data. This still allows a completely blank device to be seeded
+    // later by a local provisioning build.
+    if (hasMeaningfulStoredServiceSettings()) {
+        ok &= _prefs.putBool(kServiceInitializedKey, true) > 0;
+    }
+    return ok;
+}
+
+bool DeviceConfig::seedLocalServiceDefaultsIfNeeded() {
+    const bool serviceInitialized = _prefs.getBool(kServiceInitializedKey, false);
+    const bool hasStoredSettings = hasMeaningfulStoredServiceSettings();
+    const bool defaultsAvailable = service::bootstrapDefaultsAvailable();
+
+    if (serviceInitialized) return true;
+
+    // Preserve any values written by older firmware. This is the migration
+    // path for devices that already have broker settings but predate svcinit.
+    if (hasStoredSettings) {
+        return _prefs.putBool(kServiceInitializedKey, true) > 0;
+    }
+
+    if (!service::shouldSeedBootstrap(serviceInitialized, hasStoredSettings, defaultsAvailable)) return true;
+
+    _settings.mqttHost = service::kBootstrapDefaults.host;
+    _settings.mqttPort = service::kBootstrapDefaults.port;
+    _settings.mqttUsername = service::kBootstrapDefaults.username;
+    _settings.mqttPassword = service::kBootstrapDefaults.password;
+
+    if (!saveServiceSettings()) return false;
+    _serviceSeededThisBoot = true;
+    return true;
+}
+
 bool DeviceConfig::save() {
     if (_settings.displayName.length() > 24) _settings.displayName.remove(24);
     bool ok = true;
-    ok &= _prefs.putString("name", _settings.displayName) > 0 || _settings.displayName.isEmpty();
-    ok &= _prefs.putString("group", _settings.groupCode) > 0 || _settings.groupCode.isEmpty();
-    ok &= _prefs.putString("gpass", _settings.groupPassword) > 0 || _settings.groupPassword.isEmpty();
-    ok &= _prefs.putString("room", _settings.roomToken) > 0 || _settings.roomToken.isEmpty();
-    ok &= _prefs.putString("mhost", _settings.mqttHost) > 0 || _settings.mqttHost.isEmpty();
-    ok &= _prefs.putUShort("mport", _settings.mqttPort) > 0;
-    ok &= _prefs.putString("muser", _settings.mqttUsername) > 0 || _settings.mqttUsername.isEmpty();
-    ok &= _prefs.putString("mpass", _settings.mqttPassword) > 0 || _settings.mqttPassword.isEmpty();
-    ok &= _prefs.putShort("tz", _settings.utcOffsetMinutes) > 0;
-    ok &= _prefs.putUChar("accent", static_cast<uint8_t>(_settings.accent)) > 0;
+    ok &= _prefs.putString(kNameKey, _settings.displayName) > 0 || _settings.displayName.isEmpty();
+    ok &= _prefs.putString(kGroupKey, _settings.groupCode) > 0 || _settings.groupCode.isEmpty();
+    ok &= _prefs.putString(kGroupPasswordKey, _settings.groupPassword) > 0 || _settings.groupPassword.isEmpty();
+    ok &= _prefs.putString(kRoomTokenKey, _settings.roomToken) > 0 || _settings.roomToken.isEmpty();
+    ok &= saveServiceSettings();
+    ok &= _prefs.putShort(kTimezoneKey, _settings.utcOffsetMinutes) > 0;
+    ok &= _prefs.putUChar(kAccentKey, static_cast<uint8_t>(_settings.accent)) > 0;
     return ok;
 }
 
@@ -107,13 +176,13 @@ void DeviceConfig::clearRoom() {
 uint32_t DeviceConfig::nextOutgoingCounter() {
     ++_outCounter;
     if (_outCounter == 0) ++_outCounter;
-    _prefs.putUInt("outctr", _outCounter);
+    _prefs.putUInt(kOutgoingCounterKey, _outCounter);
     return _outCounter;
 }
 
 bool DeviceConfig::setAccent(core::Accent accent) {
     _settings.accent = accent;
-    return _prefs.putUChar("accent", static_cast<uint8_t>(accent)) > 0;
+    return _prefs.putUChar(kAccentKey, static_cast<uint8_t>(accent)) > 0;
 }
 
 }  // namespace friendbox::config

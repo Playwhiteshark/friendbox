@@ -22,6 +22,9 @@ void App::begin() {
         _display.fatal("Configuration storage could not be opened.");
         return;
     }
+    if (_config.serviceSeededThisBoot()) {
+        Serial.println("MQTT service settings provisioned into NVS from local defaults.");
+    }
     if (!_store.begin()) {
         _display.fatal("Message storage could not be opened.");
         return;

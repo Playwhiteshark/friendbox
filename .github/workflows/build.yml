@@ -21,7 +21,11 @@ jobs:
             lib/FriendBoxCore/src/FriendBoxCore.cpp tests/host/test_core.cpp \
             -o /tmp/friendbox-core-tests
           /tmp/friendbox-core-tests
+          g++ -std=c++17 -Wall -Wextra -Werror -Iinclude \
+            tests/host/test_service_config.cpp -o /tmp/friendbox-service-tests
+          /tmp/friendbox-service-tests
           python3 tests/host/test_manifest.py
           python3 scripts/validate_project.py
+          python3 scripts/validate_local_provisioning.py
       - name: Build firmware
         run: pio run -e friendbox

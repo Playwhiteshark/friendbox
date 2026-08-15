@@ -7,3 +7,6 @@
 __pycache__/
 *.pyc
 dist/
+
+# Private per-developer MQTT bootstrap credentials. Never commit this file.
+include/LocalServiceConfig.h
