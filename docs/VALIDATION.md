@@ -38,3 +38,19 @@ These checks cannot be truthfully completed without the actual board and/or a li
 6. Automatic bootloader rollback. The source SDK configuration enables it and the app has A/B partitions plus the ESP-IDF validation hook, but the destructive hardware test must still prove the exact prebuilt bootloader that PlatformIO flashes.
 
 Use `docs/HARDWARE_VALIDATION.md` for the intentionally short physical test sequence. Do not describe rollback as validated until its destructive test passes.
+
+## Physical two-device validation — 2026-08-15
+
+Validated on two LILYGO T-Display-S3 devices:
+
+- both devices boot successfully
+- captive setup portal works
+- unique setup AP names work
+- Wi-Fi configuration works
+- both devices connect to HiveMQ Cloud over MQTT
+- one device can create a FriendBox room
+- second device can join using the same room credentials
+- messages successfully send and receive between both devices
+- persistent local configuration survives reboot
+
+Result: PASS
