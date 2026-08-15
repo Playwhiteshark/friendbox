@@ -71,8 +71,7 @@ SetupResult SetupPortal::run(config::DeviceConfig& config, bool forced) {
     wm.addParameter(&pAccentOptions);
     wm.addParameter(&pTz);
 
-    const String suffix = current.deviceId.length() >= 4 ? current.deviceId.substring(current.deviceId.length() - 4) : "0000";
-    const String apName = "FriendBox-Setup-" + suffix;
+    const String apName = current.setupApName();
     if (!wm.startConfigPortal(apName.c_str())) return {};
 
     current.displayName = String(pName.getValue());

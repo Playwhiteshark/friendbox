@@ -27,7 +27,7 @@ for name in required:
 
 pio = (ROOT / "platformio.ini").read_text(encoding="utf-8")
 for expected in [
-    "espressif32@7.0.1",
+    "espressif32@6.5.0",
     "lilygo-t-display-s3",
     "TFT_eSPI@2.5.43",
     "WiFiManager@2.0.17",

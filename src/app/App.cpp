@@ -63,10 +63,7 @@ bool App::ensureConfigured(bool forced) {
     if (!forced && _config.settings().complete()) return true;
 
     while (true) {
-        const String suffix = _config.settings().deviceId.length() >= 4
-                                  ? _config.settings().deviceId.substring(_config.settings().deviceId.length() - 4)
-                                  : "0000";
-        _display.setupMode("FriendBox-Setup-" + suffix);
+        _display.setupMode(_config.settings().setupApName());
         const auto result = _setup.run(_config, forced);
         if (result.saved && _config.settings().complete()) {
             if (!oldRoom.isEmpty() && oldRoom != _config.settings().roomToken) _store.clear();

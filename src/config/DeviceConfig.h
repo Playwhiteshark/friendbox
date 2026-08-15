@@ -19,6 +19,10 @@ struct Settings {
     int16_t utcOffsetMinutes{0};
     core::Accent accent{core::Accent::Cyan};
 
+    String setupApName() const {
+        return "FriendBox-Setup-" + deviceId;
+    }
+    
     bool hasRoom() const {
         return core::validGroupCode(groupCode.c_str()) &&
                core::validGroupPassword(groupPassword.c_str()) &&
