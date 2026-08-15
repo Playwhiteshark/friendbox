@@ -1,0 +1,59 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate tag and set firmware version
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, re
+          tag = os.environ['GITHUB_REF_NAME']
+          if not re.fullmatch(r'v\d+\.\d+\.\d+', tag):
+              raise SystemExit('Release tag must be vMAJOR.MINOR.PATCH')
+          version = tag[1:]
+          with open('include/GeneratedVersion.h', 'w', encoding='utf-8') as f:
+              f.write('#pragma once\n#define FRIEND_BOX_VERSION "' + version + '"\n')
+          PY
+      - name: Install PlatformIO
+        run: python -m pip install --upgrade platformio
+      - name: Run host tests
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror \
+            -Ilib/FriendBoxCore/src \
+            lib/FriendBoxCore/src/FriendBoxCore.cpp tests/host/test_core.cpp \
+            -o /tmp/friendbox-core-tests
+          /tmp/friendbox-core-tests
+          python3 tests/host/test_manifest.py
+          python3 scripts/validate_project.py
+      - name: Build firmware
+        run: pio run -e friendbox
+      - name: Generate OTA manifest
+        run: |
+          mkdir -p dist
+          cp .pio/build/friendbox/firmware.bin dist/firmware.bin
+          python3 scripts/generate_manifest.py \
+            --firmware dist/firmware.bin \
+            --tag "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --output dist/manifest.json
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/firmware.bin dist/manifest.json \
+            --title "$GITHUB_REF_NAME" --generate-notes

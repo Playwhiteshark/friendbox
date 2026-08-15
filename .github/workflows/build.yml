@@ -1,0 +1,27 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PlatformIO
+        run: python -m pip install --upgrade platformio
+      - name: Host core tests
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror \
+            -Ilib/FriendBoxCore/src \
+            lib/FriendBoxCore/src/FriendBoxCore.cpp tests/host/test_core.cpp \
+            -o /tmp/friendbox-core-tests
+          /tmp/friendbox-core-tests
+          python3 tests/host/test_manifest.py
+          python3 scripts/validate_project.py
+      - name: Build firmware
+        run: pio run -e friendbox
