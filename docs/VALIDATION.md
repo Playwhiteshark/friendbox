@@ -4,7 +4,7 @@ This file records what has actually passed. It deliberately separates automated 
 
 ## Automated checks
 
-The `build` workflow runs on every push and pull request. The latest `main` run for commit `1c66ac7` passed on 2026-08-15 and included:
+The `build` workflow runs on every push and pull request. The `main` run for firmware commit `1c66ac7` passed on 2026-08-15, and the documentation update was also gated by the same successful workflow. It includes:
 
 - host compilation/tests for `FriendBoxCore` behavior;
 - host tests for local service bootstrap precedence;
