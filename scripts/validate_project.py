@@ -20,6 +20,7 @@ required = [
     "src/display/DisplayScreens.cpp",
     "src/messaging/MqttTransport.cpp",
     "src/ui/UiRenderer.cpp",
+    "lib/FriendBoxCore/src/MorseComposer.cpp",
     "lib/FriendBoxCore/src/PresetCatalog.cpp",
     "src/update/OtaUpdater.cpp",
     ".github/workflows/build.yml",

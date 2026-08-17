@@ -66,6 +66,8 @@ The request uses HTTPS certificate verification through the ESP certificate bund
 - `sha256` is 64 hexadecimal characters; and
 - the declared size is plausible and fits the inactive OTA partition.
 
+The fourth Info page reports the current updater state as `IDLE`, `CHECKING`, `UPDATING`, or `UPDATE FAILED`. It is diagnostic status only; updates remain automatic.
+
 ## Installation
 
 Firmware is streamed into the inactive application slot while SHA-256 is calculated. FriendBox changes the boot partition only after all of these succeed:

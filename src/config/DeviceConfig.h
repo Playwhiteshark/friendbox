@@ -2,7 +2,10 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <array>
 #include "FriendBoxCore.h"
+#include "MorseComposer.h"
+#include "PresetCatalog.h"
 #include "ProductInfo.h"
 #include "ServiceConfig.h"
 
@@ -20,6 +23,15 @@ struct Settings {
     String mqttPassword;
     int16_t utcOffsetMinutes{0};
     core::Accent accent{core::Accent::Cyan};
+    uint32_t customColor1{0x00DCE6};
+    uint32_t customColor2{0xFF64AF};
+    uint8_t brightnessPercent{100};
+    uint16_t screenTimeoutSeconds{0};
+    bool clockVisible{true};
+    core::MorseTiming morseTiming{};
+    std::array<String, core::PresetCatalog::kCapacity> presets{
+        "HELLO", "POKE", "MISS YOU", "CALL ME", "GOOD NIGHT"
+    };
 
     String setupApName() const {
         return String(product::kSetupApPrefix) + deviceId;
@@ -54,9 +66,16 @@ struct SettingsDraft {
     String mqttPassword;
     int16_t utcOffsetMinutes{0};
     core::Accent accent{core::Accent::Cyan};
+    uint32_t customColor1{0x00DCE6};
+    uint32_t customColor2{0xFF64AF};
+    uint8_t brightnessPercent{100};
+    uint16_t screenTimeoutSeconds{0};
+    bool clockVisible{true};
+    core::MorseTiming morseTiming{};
+    std::array<String, core::PresetCatalog::kCapacity> presets;
 };
 
-enum class RoomAction : uint8_t { Create, Join };
+enum class RoomAction : uint8_t { Keep, Create, Join };
 
 class DeviceConfig {
 public:

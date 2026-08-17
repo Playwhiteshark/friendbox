@@ -8,16 +8,18 @@ The current firmware provides:
 - generated device identity plus a user-selected display name;
 - room creation and joining with a six-character code and six-digit password;
 - MQTT-over-TLS messaging with QoS 1, reconnect, and persistent broker sessions;
-- five preset outgoing messages;
+- five phone-configurable preset outgoing messages, including disabled slots;
+- one-button Morse composition for new messages and on-device preset editing;
 - a persistent 50-message inbox with unread state and duplicate suppression;
 - a one-button interface with tap, hold, and long-hold actions;
-- six persistent accent colors;
+- six built-in accent colors plus two phone-configurable custom colors;
+- configurable brightness, screen timeout, clock visibility, and Morse timing;
 - an NTP-backed local clock; and
 - GitHub Release OTA infrastructure with manifest, size, SHA-256, and A/B partition checks.
 
 Two physical FriendBoxes have successfully completed setup, joined the same room, and exchanged messages through HiveMQ Cloud. The full OTA and automatic rollback paths still need end-to-end hardware validation; see [Validation status](docs/VALIDATION.md).
 
-FriendBox deliberately has no application server, room database, user-account system, companion app, analytics service, or outgoing offline queue. Morse entry, reactions, pets/shared state, arbitrary typing, and direct messages are future features rather than hidden parts of v1.
+FriendBox deliberately has no application server, room database, user-account system, companion app, analytics service, or outgoing offline queue. Reactions, pets/shared state, lyrics, streaks, and direct messages are future features rather than hidden parts of this release.
 
 ## How it fits together
 
@@ -107,10 +109,16 @@ Actions are classified when the button is released:
 
 | Screen | Tap | Hold | Long hold |
 | --- | --- | --- | --- |
-| Idle | Open Inbox | Open Send | Open Info |
+| Idle | Open Inbox | Open Send | Open More |
 | Inbox | Next message | Mark current message read | Back |
-| Send | Next preset | Send selected preset | Back |
-| Info | Next info page | Cycle and save accent | Back |
+| Send | Next preset / Write Message | Send or open Morse composer | Back |
+| More | Next item | Open Edit Presets or Info | Back |
+| Edit Presets | Next slot | Edit selected slot in Morse | Back |
+| Info | Next info page | — | Back |
+| Morse composer | Dot/dash input | Dot/dash input | Command menu |
+| Morse command menu | Next command | Choose command | Resume composing |
+
+Inside the Morse composer, a release shorter than the configured dash threshold enters a dot; a longer release enters a dash. Pause for the configured letter gap to commit a character or the word gap to insert a space. A very long hold opens **Send/Save, Backspace, Space, Clear, Cancel**. These timing values can be adjusted from the phone setup page.
 
 Holding the button for about five seconds during startup forces setup mode. The low-level driver only reports duration; Morse can later use the same hardware with a different interpretation profile.
 
@@ -136,16 +144,19 @@ An unconfigured device creates an AP using its full stable device ID:
 FriendBox-Setup-<12-hex-character-device-id>
 ```
 
-Connect a phone to that network and open the captive portal. Normal setup asks for:
+Connect a phone to that network and open the captive portal. FriendBox settings now have their own **Setup** page; Wi-Fi networks stay under **Configure Wi-Fi**. The settings page includes:
 
 - display name;
 - room code/password, or both blank to create a room;
-- accent color; and
+- all five preset messages;
+- a real accent dropdown and two custom color pickers;
+- brightness, screen timeout, and clock visibility;
+- Morse timing; and
 - UTC offset, normally filled from the phone.
 
 MQTT settings are under **Advanced service settings**. For boxes prepared by the developer, [local provisioning](docs/LOCAL_PROVISIONING.md) seeds those values into NVS during the first private USB build, so a friend normally never types them. A public build on an erased device has no private defaults and must be configured manually.
 
-Hold the button for about five seconds during boot to reopen setup. Changing rooms clears the local inbox; changing only Wi-Fi, broker, name, time zone, or accent does not.
+Hold the button for about five seconds during boot to reopen setup. Changing rooms clears the local inbox; changing only Wi-Fi, broker, name, display preferences, Morse timing, or presets does not.
 
 ## Rooms and messages
 
@@ -183,7 +194,9 @@ There is no outgoing offline queue. If the sending box is disconnected, the UI r
 
 ## Persistent storage
 
-`DeviceConfig` stores settings in the `fbconfig` NVS namespace. `MessageStore` keeps up to 50 independently persisted message slots in `fbmsgs`, including sequence and unread state. When full, it replaces the oldest read message first; if all messages are unread, it replaces the oldest unread message.
+`DeviceConfig` stores settings, display preferences, Morse timing, and presets in the `fbconfig` NVS namespace. `MessageStore` keeps up to 50 independently persisted message slots in `fbmsgs`, including sequence and unread state. When full, it replaces the oldest read message first; if all messages are unread, it replaces the oldest unread message.
+
+Flashing or OTA-updating the application does not erase NVS, so configuration and messages survive firmware replacement. For a true factory reset, run `pio run -e friendbox -t erase` with the box connected over USB, then flash it again. This intentionally removes Wi-Fi, FriendBox settings, and the inbox.
 
 Private compile-time broker defaults are a one-time bootstrap only. Once service settings exist in NVS, NVS is authoritative and later builds do not overwrite them.
 
@@ -215,8 +228,8 @@ The script runs host tests and repository validators, then also performs the Pla
 
 - New screen: add its `Screen` state and intent mapping in `Ui`, render routing in `UiRenderer`, and pixels in `DisplayScreens`.
 - New persistent setting: add it to `SettingsDraft`/`Settings`, validate and persist it in `DeviceConfig`, expose it in `PortalForm`, then consume it from the relevant feature.
-- Configurable presets: persist values through `DeviceConfig`, load them into `PresetCatalog`, and let phone/on-device editors call the catalog rather than editing send-screen code.
-- Morse: add a compose screen and input profile; keep decoding/timing rules in `FriendBoxCore` where possible.
+- Configurable presets: extend the existing `DeviceConfig` draft and `PresetCatalog`; both phone and on-device editors already use that shared commit path.
+- Morse: extend `MorseComposer` and the composer UI; raw duration/pause decoding remains portable and host-tested in `FriendBoxCore`.
 - New message type: extend `Message` validation/parsing and `App` handling; do not bury feature behavior in MQTT transport.
 - New broker or transport: replace the implementation behind `MqttTransport`/`MessagingService` without coupling it to screens.
 

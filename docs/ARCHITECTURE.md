@@ -53,7 +53,7 @@ The important boundary is not the folder diagram itself:
 
 - `Display` receives already-decided content and draws it. It does not connect to MQTT or mutate configuration.
 - `ButtonDriver` debounces GPIO and reports a release duration. It does not decide what a hold means.
-- `InputMapper` classifies the duration. `Ui` maps it against the current screen and returns an intent; `App` executes side effects.
+- `InputMapper` classifies normal navigation durations. In the composer, `Ui` passes raw durations and pauses to the portable `MorseComposer` instead.
 - `MqttTransport` moves bounded byte payloads. It does not interpret screens or persist messages.
 - `MessagingService` creates/parses messages and rejects self-echoes. It does not own inbox persistence.
 - `MessageStore` owns inbox persistence and retention.
@@ -93,7 +93,7 @@ Use `BuildConfig.h` for engineering constants. Use `Settings`/`DeviceConfig` for
 | Area | Main files | Responsibility |
 | --- | --- | --- |
 | Application | `src/main.cpp`, `src/app/App.*` | Construct subsystems, perform startup, run the cooperative loop, coordinate all cross-component behavior |
-| Hardware | `src/hardware/Board.*`, `ButtonDriver.*` | Enable board power/backlight; debounce and measure raw presses |
+| Hardware | `src/hardware/Board.*`, `ButtonDriver.*` | Enable board power, PWM backlight, debounce and measure raw presses |
 | Input | `src/input/InputMapper.*` | Convert release duration to `Tap`, `Hold`, or `LongHold` |
 | UI state | `src/ui/Ui.*` | Portable current screen, indices, notices, action-to-intent mapping |
 | UI rendering | `src/ui/UiRenderer.*` | Combine UI state with runtime data and select a screen renderer |
@@ -112,12 +112,13 @@ Use `BuildConfig.h` for engineering constants. Use `Settings`/`DeviceConfig` for
 
 `lib/FriendBoxCore/src/` contains logic that compiles without Arduino:
 
-- accent parsing and cycling;
+- accent parsing and RGB conversion;
 - button timing classification;
+- Morse decoding, timing, and composition;
 - room-code and room-password validation;
 - numeric semantic-version comparison; and
 - inbox replacement-slot selection; and
-- the fixed-capacity, runtime-replaceable `PresetCatalog` with current defaults.
+- the fixed-capacity, runtime-replaceable `PresetCatalog` with disabled-slot mapping.
 
 `Ui` navigation is also intentionally Arduino-free and host-tested. Host tests live under `tests/host/`. Repository checks and build/release helpers live under `scripts/`. Keep new pure rules in `FriendBoxCore` when they do not need GPIO, NVS, Wi-Fi, Arduino `String`, or another ESP32 API.
 
@@ -158,12 +159,12 @@ If a forced maintenance portal fails but the previous settings remain complete, 
 2. Update Wi-Fi reconnect.
 3. Start/maintain time when Wi-Fi is available.
 4. Update MQTT connection state.
-5. Expire temporary UI notices.
-6. Parse and route one accepted incoming message in the application layer.
-7. Poll one button-release event, update UI state, and execute any returned intent.
+5. Parse and route accepted incoming messages in the application layer.
+6. Poll a button release; either pass raw timing to Morse or classify a navigation action.
+7. Expire notices and advance pause-based Morse composition.
 8. Let OTA schedule a background check when due.
-9. Mark UI dirty when network, unread count, or clock text changes.
-10. Render only when `Ui` is dirty.
+9. Apply the configured screen timeout without allowing incoming messages to wake the display.
+10. Mark UI dirty when runtime status changes and render only when dirty.
 
 The MQTT library runs callbacks on its internal task. `MqttTransport` only assembles a bounded payload and places it on a FreeRTOS queue there; JSON parsing, NVS writes, and UI changes happen later through the main application loop.
 
@@ -173,17 +174,16 @@ The MQTT library runs callbacks on its internal task. `MqttTransport` only assem
 GPIO LOW/HIGH
   -> ButtonDriver debounce
   -> ButtonRelease{heldMs}
-  -> InputMapper
-  -> ButtonAction
-  -> Ui::handleAction(current screen, action)
+  -> normal mode: InputMapper -> ButtonAction -> Ui::handleAction
+  -> compose mode: Ui::handleMorseRelease(raw duration)
   -> Ui state change + optional Intent
   -> App::executeIntent(message/configuration side effects)
   -> UiRenderer -> Display
 ```
 
-This separation is what makes Morse feasible. A Morse mode can interpret raw durations and pauses differently without turning the GPIO driver into a UI state machine.
+This separation lets the Morse mode interpret raw durations and pauses without turning the GPIO driver into a UI state machine.
 
-The current screens are `Idle`, `Inbox`, `Send`, and `Info`. `Ui` owns selected indexes and temporary notices without depending on Arduino, NVS, MQTT, or the display. `UiRenderer` selects already-decided content; `Display` owns every pixel and font/color decision. `PresetCatalog` owns send-menu values, so later editors do not need to modify screen navigation.
+The current screens are `Idle`, `Inbox`, `Send`, `More`, `Info`, `PresetSelect`, `Composer`, and `ComposerMenu`. `Ui` owns selected indexes, composition state, and temporary notices without depending on Arduino, NVS, MQTT, or the display. `UiRenderer` selects already-decided content; `Display` owns every pixel and font/color decision. `PresetCatalog` owns send-menu values and enabled-slot mapping.
 
 ## Configuration and setup flow
 
@@ -193,9 +193,9 @@ The stable `deviceId` is a 12-character hexadecimal value derived from the ESP32
 - MQTT client ID: `friendbox-<deviceId>`; and
 - outgoing message ID: `<deviceId>-<persistent-counter>`.
 
-User-configurable settings are stored in the `fbconfig` NVS namespace. They include name, room code/password/token, MQTT service values, time-zone offset, accent, service-initialized marker, and the outgoing counter.
+User-configurable settings are stored in the `fbconfig` NVS namespace. They include name, room code/password/token, MQTT service values, time-zone offset, built-in/custom accent choices, brightness, screen timeout, clock visibility, Morse timing, five presets, the service-initialized marker, and the outgoing counter.
 
-The captive portal starts from `DeviceConfig::draft()`. `PortalForm` edits that copy, and `DeviceConfig::apply()` trims, validates, derives the room token, persists, and only then replaces live settings. This transaction boundary is where future phone-configurable values—including preset messages—should enter the system. On-device editors should submit through the same configuration owner rather than writing NVS themselves.
+The captive portal starts from `DeviceConfig::draft()`. WiFiManager exposes device values on a separate Setup/parameters page and keeps SSID selection under Configure Wi-Fi. `PortalForm` edits the draft, and `DeviceConfig::apply()` trims, validates, derives the room token, persists, and only then replaces live settings. The on-device preset editor submits through the same draft/commit boundary rather than writing NVS itself.
 
 Room creation generates credentials locally. Room joining validates supplied credentials. Both derive:
 

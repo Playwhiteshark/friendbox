@@ -10,17 +10,6 @@ constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
                                  (b >> 3U));
 }
 
-constexpr uint16_t kAccentColors[] = {
-    rgb565(0, 220, 230),
-    rgb565(70, 135, 255),
-    rgb565(70, 220, 120),
-    rgb565(255, 155, 55),
-    rgb565(255, 100, 175),
-    rgb565(175, 105, 255),
-};
-
-static_assert(sizeof(kAccentColors) / sizeof(kAccentColors[0]) ==
-              static_cast<size_t>(core::Accent::Count));
 }
 
 bool Display::begin() {
@@ -38,9 +27,10 @@ void Display::clear() {
     _gfx.fillScreen(TFT_BLACK);
 }
 
-uint16_t Display::accentColor(core::Accent accent) const {
-    const size_t index = static_cast<size_t>(accent);
-    return index < static_cast<size_t>(core::Accent::Count) ? kAccentColors[index] : TFT_WHITE;
+uint16_t Display::accentColor(uint32_t rgb) const {
+    return rgb565(static_cast<uint8_t>((rgb >> 16U) & 0xFFU),
+                  static_cast<uint8_t>((rgb >> 8U) & 0xFFU),
+                  static_cast<uint8_t>(rgb & 0xFFU));
 }
 
 void Display::centered(const String& text, int16_t y, uint8_t size, uint16_t color) {

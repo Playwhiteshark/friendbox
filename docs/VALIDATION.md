@@ -16,7 +16,7 @@ The `build` workflow runs on every push and pull request. The `main` run for fir
 - checks against disabled TLS verification and common committed token formats; and
 - a complete `pio run -e friendbox` firmware build.
 
-The host core coverage includes accent parsing/cycling, button timing boundaries, room credential validation, strict numeric semantic-version comparison (including malformed/overflow input), and inbox replacement policy.
+The host core coverage includes accent parsing/RGB values, button timing boundaries, room credential validation, strict numeric semantic-version comparison (including malformed/overflow input), inbox replacement policy, disabled preset mapping, Morse decoding/composition, and composer/navigation intents.
 
 Run the same local entry point with:
 
@@ -49,10 +49,12 @@ On the current Windows development machine, normal esptool stub uploads repeated
 
 These paths exist in code but still need explicit end-to-end proof:
 
-1. A complete GitHub OTA update from one tagged release to a newer tagged release.
-2. Automatic rollback after installing a deliberately unhealthy test image. A/B partitions, OTA metadata, and the app validation hook exist; the exact flashed bootloader behavior remains the deciding test.
-3. Extended offline/reconnect testing, including broker-queued QoS 1 delivery after a longer disconnection and duplicate-delivery behavior.
-4. The final external GPIO1 momentary button mounted in the finished enclosure.
+1. Phone-configurable presets/display settings on iPhone and physical Morse timing/on-device preset editing.
+2. Screen timeout behavior, especially the guarantee that incoming messages never wake the display.
+3. A complete GitHub OTA update from one tagged release to a newer tagged release.
+4. Automatic rollback after installing a deliberately unhealthy test image. A/B partitions, OTA metadata, and the app validation hook exist; the exact flashed bootloader behavior remains the deciding test.
+5. Extended offline/reconnect testing, including broker-queued QoS 1 delivery after a longer disconnection and duplicate-delivery behavior.
+6. The final external GPIO1 momentary button mounted in the finished enclosure.
 
 No numeric release tag exists yet. Do not describe OTA or rollback as physically validated, and do not create the first release merely to make the version look finished.
 

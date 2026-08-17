@@ -11,27 +11,29 @@ void Display::boot(const String& line) {
 }
 
 void Display::idle(const String& timeText, size_t unread, const String& network,
-                   core::Accent accent) {
+                   uint32_t accentRgb) {
     clear();
-    const uint16_t a = accentColor(accent);
+    const uint16_t a = accentColor(accentRgb);
     title(product::kDisplayTitle, a);
-    centered(timeText, 48, 4, TFT_WHITE);
+    if (!timeText.isEmpty()) centered(timeText, 48, 4, TFT_WHITE);
     if (unread > 0) {
-        centered(String(unread) + (unread == 1 ? " NEW MESSAGE" : " NEW MESSAGES"), 91, 2, a);
+        centered(String(unread) + (unread == 1 ? " NEW MESSAGE" : " NEW MESSAGES"),
+                 timeText.isEmpty() ? 67 : 91, 2, a);
     } else {
-        centered("all caught up", 94, 2, _gfx.color565(180, 180, 180));
+        centered("all caught up", timeText.isEmpty() ? 70 : 94, 2,
+                 _gfx.color565(180, 180, 180));
     }
     _gfx.setTextSize(1);
     _gfx.setTextColor(network == "CONNECTED" ? a : _gfx.color565(150, 150, 150));
     _gfx.setCursor(253, 11);
     _gfx.print(network == "CONNECTED" ? "ONLINE" : network);
-    footer("tap inbox   hold send   long info");
+    footer("tap inbox   hold send   long more");
 }
 
 void Display::inbox(const String& sender, const String& text, const String& when,
-                    size_t position, size_t count, bool unread, core::Accent accent) {
+                    size_t position, size_t count, bool unread, uint32_t accentRgb) {
     clear();
-    const uint16_t a = accentColor(accent);
+    const uint16_t a = accentColor(accentRgb);
     title("INBOX", a);
     _gfx.setTextSize(1);
     _gfx.setTextColor(_gfx.color565(155, 155, 155));
@@ -51,9 +53,9 @@ void Display::inbox(const String& sender, const String& text, const String& when
 }
 
 void Display::sendMenu(const std::string* items, size_t count, size_t selected,
-                       bool connected, core::Accent accent) {
+                       bool connected, uint32_t accentRgb) {
     clear();
-    const uint16_t a = accentColor(accent);
+    const uint16_t a = accentColor(accentRgb);
     title("SEND", a);
     const size_t visible = count < 5 ? count : 5;
     const size_t start = selected >= visible ? selected - visible + 1 : 0;
@@ -63,7 +65,9 @@ void Display::sendMenu(const std::string* items, size_t count, size_t selected,
         _gfx.setTextColor(i == selected ? a : TFT_WHITE);
         _gfx.setCursor(16, 38 + static_cast<int>(row) * 21);
         _gfx.print(i == selected ? "> " : "  ");
-        _gfx.print(items[i].c_str());
+        String label(items[i].c_str());
+        if (label.length() > 22) label = label.substring(0, 19) + "...";
+        _gfx.print(label);
     }
     if (!connected) {
         _gfx.setTextSize(1);
@@ -74,42 +78,94 @@ void Display::sendMenu(const std::string* items, size_t count, size_t selected,
     footer("tap next   hold send   long back");
 }
 
+void Display::selectionMenu(const String& heading, const std::string* items, size_t count,
+                            size_t selected, const String& help, uint32_t accentRgb) {
+    clear();
+    const uint16_t a = accentColor(accentRgb);
+    title(heading, a);
+    const size_t visible = count < 5 ? count : 5;
+    const size_t start = selected >= visible ? selected - visible + 1 : 0;
+    for (size_t row = 0; row < visible && start + row < count; ++row) {
+        const size_t i = start + row;
+        _gfx.setTextSize(2);
+        _gfx.setTextColor(i == selected ? a : TFT_WHITE);
+        _gfx.setCursor(16, 38 + static_cast<int>(row) * 21);
+        String label(items[i].c_str());
+        if (label.length() > 22) label = label.substring(0, 19) + "...";
+        _gfx.print(i == selected ? "> " : "  ");
+        _gfx.print(label);
+    }
+    footer(help);
+}
+
+void Display::composer(const String& heading, const std::string& text, const std::string& code,
+                       char preview, bool invalid, bool full, uint32_t accentRgb) {
+    clear();
+    const uint16_t a = accentColor(accentRgb);
+    title(heading, a);
+    String body(text.c_str());
+    if (body.length() > 69) body = "..." + body.substring(body.length() - 66);
+    wrapped(body.isEmpty() ? String("start typing...") : body, 12, 39, 296, 2,
+            body.isEmpty() ? _gfx.color565(145, 145, 145) : TFT_WHITE, 3);
+
+    _gfx.setTextSize(3);
+    _gfx.setTextColor(a);
+    _gfx.setCursor(12, 108);
+    _gfx.print(code.empty() ? "_" : code.c_str());
+    _gfx.setTextSize(2);
+    _gfx.setTextColor(invalid || full ? _gfx.color565(255, 95, 95) : TFT_WHITE);
+    _gfx.setCursor(226, 112);
+    if (full) _gfx.print("FULL");
+    else if (invalid) _gfx.print("INVALID");
+    else if (preview != '\0') _gfx.print(preview);
+    footer("short .   longer -   very long menu");
+}
+
 void Display::info(size_t page, const String& name, const String& groupCode,
                    const String& groupPassword, const String& wifi, const String& mqtt,
-                   const String& accentName, const String& version, core::Accent accent) {
+                   const String& ota, const String& accentName, const String& version,
+                   uint32_t accentRgb) {
     clear();
-    const uint16_t a = accentColor(accent);
+    const uint16_t a = accentColor(accentRgb);
     title("INFO", a);
     _gfx.setTextSize(2);
     _gfx.setTextColor(TFT_WHITE);
-    if (page % 3 == 0) {
+    if (page % 4 == 0) {
         _gfx.setCursor(12, 42); _gfx.print(name);
         _gfx.setTextSize(1);
         _gfx.setCursor(12, 78); _gfx.print("Wi-Fi: " + wifi);
         _gfx.setCursor(12, 95); _gfx.print("MQTT:   " + mqtt);
         _gfx.setCursor(12, 112); _gfx.print("Firmware: " + version);
-    } else if (page % 3 == 1) {
+    } else if (page % 4 == 1) {
         _gfx.setCursor(12, 42); _gfx.print("Room " + groupCode);
         _gfx.setTextSize(1);
         _gfx.setCursor(12, 80); _gfx.print("Password");
         _gfx.setTextSize(3);
         _gfx.setTextColor(a);
         _gfx.setCursor(12, 101); _gfx.print(groupPassword);
-    } else {
+    } else if (page % 4 == 2) {
         _gfx.setCursor(12, 48); _gfx.print("Accent");
         _gfx.setTextSize(3);
         _gfx.setTextColor(a);
         _gfx.setCursor(12, 82); _gfx.print(accentName);
         _gfx.setTextSize(1);
         _gfx.setTextColor(TFT_WHITE);
-        _gfx.setCursor(12, 126); _gfx.print("Hold to change");
+        _gfx.setCursor(12, 126); _gfx.print("Change from phone setup");
+    } else {
+        _gfx.setCursor(12, 48); _gfx.print("Software update");
+        _gfx.setTextSize(3);
+        _gfx.setTextColor(a);
+        _gfx.setCursor(12, 82); _gfx.print(ota);
+        _gfx.setTextSize(1);
+        _gfx.setTextColor(TFT_WHITE);
+        _gfx.setCursor(12, 126); _gfx.print("Checks after startup, then every 12h");
     }
-    footer("tap page   hold accent   long back");
+    footer("tap page   long back");
 }
 
-void Display::notification(const String& titleText, const String& body, core::Accent accent) {
+void Display::notification(const String& titleText, const String& body, uint32_t accentRgb) {
     clear();
-    const uint16_t a = accentColor(accent);
+    const uint16_t a = accentColor(accentRgb);
     centered(titleText, 40, 2, a);
     wrapped(body, 18, 78, 284, 2, TFT_WHITE, 2);
 }

@@ -9,13 +9,26 @@ Current status: display/boot and basic UI behavior passed; the final external GP
 - Wire one normally-open momentary button between **GPIO1 and GND**.
 - Flash the firmware over USB-C using DIO flash mode.
 - Confirm the screen reaches setup or Idle without a reset loop.
-- Confirm tap opens Inbox, hold opens Send, and long hold opens Info.
-- In Info, hold several times and confirm the accent changes and survives reboot.
+- Confirm tap opens Inbox, hold opens Send, and long hold opens More.
+- Confirm More opens Edit Presets and the read-only Info pages.
+- Change the accent, brightness, screen timeout, and clock visibility from phone setup; confirm they survive reboot.
 - Confirm a five-second startup hold opens setup mode.
 
 If normal uploads disconnect on the current Windows development machine, enter ROM download mode (hold BOOT, tap RST, release BOOT) and use the equivalent esptool command with `--no-stub`.
 
-## 2. Two-box messaging
+## 2. Phone settings and Morse
+
+Current status: implemented and host-tested; physical timing and captive-portal layout need validation.
+
+- Confirm the portal has separate Setup and Configure Wi-Fi pages.
+- Confirm the accent is a usable dropdown and both custom color pickers render correctly on iPhone.
+- Change all five presets by phone; blank one slot and confirm it disappears from Send.
+- Compose and send a short message in Morse, including a word space and a correction.
+- Edit an existing preset in Morse, save it, reboot, and confirm it remains changed.
+- Clear and save a preset; confirm the disabled slot remains available in Edit Presets.
+- Let the configured timeout turn the backlight off, send a message from the other box, and confirm the display does not wake. Wake it with one press and confirm that wake-up press performs no navigation action.
+
+## 3. Two-box messaging
 
 Current status: basic room creation/join and bidirectional message exchange passed on 2026-08-15. Repeat this fuller regression before a release.
 
@@ -28,7 +41,7 @@ Current status: basic room creation/join and bidirectional message exchange pass
 - Re-send or inject the same message ID and confirm it is not duplicated.
 - Change one box to a different room and confirm its old-room inbox is cleared.
 
-## 3. Temporary-offline and reconnect
+## 4. Temporary-offline and reconnect
 
 Current status: requires extended validation.
 
@@ -39,7 +52,7 @@ Current status: requires extended validation.
 - Confirm reconnect bursts do not duplicate stored messages or overflow normal use of the bounded receive queue.
 - Confirm attempting to send from the disconnected box reports that the message was not sent; FriendBox has no outgoing offline queue.
 
-## 4. OTA happy path
+## 5. OTA happy path
 
 Current status: implemented, not yet physically validated end to end.
 
@@ -47,11 +60,12 @@ Current status: implemented, not yet physically validated end to end.
 - Flash or install that version and confirm the Info screen reports it.
 - Publish a newer numeric release tag.
 - Confirm the device fetches the latest manifest, downloads into the inactive slot, verifies size/hash/image, reboots, and reports the new version.
+- Watch the fourth Info page for `CHECKING`, `UPDATING`, or `UPDATE FAILED` while diagnosing the run.
 - Confirm configuration and inbox data in NVS survive the update.
 - Confirm an unchanged or older version is ignored.
 - Confirm a deliberately bad manifest hash fails without changing the boot partition.
 
-## 5. Rollback — required before relying on it
+## 6. Rollback — required before relying on it
 
 Current status: not validated.
 
