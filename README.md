@@ -1,26 +1,79 @@
 # FriendBox
 
-FriendBox is a deliberately small internet messenger for the **LILYGO T-Display-S3**. One universal firmware image runs on every box.
+FriendBox is a small internet-connected messenger for the **LILYGO T-Display-S3**. The same firmware runs on every box: each device gets its own stable ID and display name, then joins a room derived from a shared room code and password.
 
-Version 1 provides:
+The current firmware provides:
 
-- phone-based Wi-Fi/configuration portal;
-- generated device identity and user display name;
-- create/join FriendBox rooms with a six-character code and six-digit password;
-- MQTT-over-TLS group messaging, QoS 1, persistent MQTT sessions, reconnect;
-- five canned outgoing messages;
-- 50-message persistent local inbox, unread state and QoS-1 deduplication;
-- one external-button UI;
-- selectable accent color (cyan, blue, green, orange, pink, purple);
-- NTP clock;
-- GitHub Release OTA with HTTPS, manifest checks, SHA-256 and A/B partitions;
-- post-OTA validation hook for rollback-enabled bootloaders.
+- phone-based Wi-Fi and device setup;
+- generated device identity plus a user-selected display name;
+- room creation and joining with a six-character code and six-digit password;
+- MQTT-over-TLS messaging with QoS 1, reconnect, and persistent broker sessions;
+- five preset outgoing messages;
+- a persistent 50-message inbox with unread state and duplicate suppression;
+- a one-button interface with tap, hold, and long-hold actions;
+- six persistent accent colors;
+- an NTP-backed local clock; and
+- GitHub Release OTA infrastructure with manifest, size, SHA-256, and A/B partition checks.
 
-It intentionally does **not** include pets, Morse entry, arbitrary typing, direct messages, an app, a FriendBox backend, analytics, LVGL, or an outgoing offline queue.
+Two physical FriendBoxes have successfully completed setup, joined the same room, and exchanged messages through HiveMQ Cloud. The full OTA and automatic rollback paths still need end-to-end hardware validation; see [Validation status](docs/VALIDATION.md).
+
+FriendBox deliberately has no application server, room database, user-account system, companion app, analytics service, or outgoing offline queue. Morse entry, reactions, pets/shared state, arbitrary typing, and direct messages are future features rather than hidden parts of v1.
+
+## How it fits together
+
+```text
+button release
+    -> ButtonDriver measures duration
+    -> InputMapper classifies tap/hold/long hold
+    -> App applies the action to Ui or MessagingService
+    -> Display redraws the current screen
+
+outgoing message
+    -> MessagingService creates and validates Message JSON
+    -> MqttTransport publishes to the room topic
+    -> HiveMQ Cloud forwards it to the other boxes
+
+incoming MQTT packet
+    -> MqttTransport assembles and queues the payload
+    -> MessagingService parses, ignores self-echoes, and deduplicates
+    -> MessageStore persists it in NVS
+    -> Ui shows a notification and unread count
+```
+
+`App` is the coordinator. Display code does not know about MQTT, and MQTT code does not know which screen is open. Configuration and inbox persistence are separate NVS-backed components. Portable rules that can be tested without an ESP32 live in `lib/FriendBoxCore`.
+
+For the full component map, startup lifecycle, storage layout, data flows, and extension points, read [Architecture and repository map](docs/ARCHITECTURE.md).
+
+## Where things live
+
+| Path | Responsibility |
+| --- | --- |
+| `src/main.cpp` | Arduino entry points; delegates to the single `App` instance |
+| `src/app/` | Startup, main loop, and coordination between subsystems |
+| `src/hardware/` | Board power/backlight setup and raw button timing |
+| `src/input/` | Maps a released-button duration to a UI action |
+| `src/ui/` | Screen state, selection state, navigation state, and preset messages |
+| `src/display/` | All TFT drawing and RGB565 color mapping |
+| `src/config/` | Device settings, identity, room derivation, and `fbconfig` NVS access |
+| `src/setup/` | WiFiManager captive portal and setup form |
+| `src/network/` | Wi-Fi reconnect and NTP time |
+| `src/messaging/` | Message JSON, MQTT transport, inbox logic, and `fbmsgs` NVS access |
+| `src/update/` | GitHub manifest checks and A/B OTA installation |
+| `src/util/` | ESP32-specific hashing helpers |
+| `lib/FriendBoxCore/` | Host-testable rules with no Arduino dependency |
+| `include/BuildConfig.h` | Pins, timing thresholds, limits, intervals, and public repo slug |
+| `include/ServiceConfig.h` | Public MQTT bootstrap interface and safe empty defaults |
+| `include/LocalServiceConfig.h` | Private local MQTT defaults; gitignored and never in public OTA builds |
+| `platformio.ini` | Board, framework, flash mode, language standard, and pinned libraries |
+| `partitions.csv` | A/B application slots, OTA metadata, and NVS layout |
+| `tests/host/` | Desktop tests for portable core and manifest logic |
+| `scripts/` | Local checks, project validation, provisioning validation, manifest generation |
+| `.github/workflows/` | CI build and tagged-release pipelines |
+| `docs/` | Architecture, provisioning, broker, OTA, validation, and references |
 
 ## Hardware
 
-Target board: **LILYGO T-Display-S3** (ESP32-S3, 170×320 ST7789 display).
+Target: **LILYGO T-Display-S3** with ESP32-S3 and 170×320 ST7789 display.
 
 Wire one normally-open momentary button:
 
@@ -28,130 +81,86 @@ Wire one normally-open momentary button:
 GPIO1 ---- button ---- GND
 ```
 
-The firmware uses `INPUT_PULLUP`, so released = HIGH and pressed = LOW. To use the onboard KEY1 instead, change `kButtonPin` in `include/BuildConfig.h` from `1` to `14`.
+The firmware uses `INPUT_PULLUP`, so released is HIGH and pressed is LOW. To use onboard KEY1 instead, change `kButtonPin` in `include/BuildConfig.h` from `1` to `14`.
 
-The display wiring in `src/display/Display.cpp` follows LILYGO's official Arduino_GFX T-Display-S3 example. GPIO15 is driven HIGH before display startup to enable board peripherals; GPIO38 drives the backlight.
+The working, deliberately pinned toolchain is:
+
+```ini
+platform = espressif32@6.5.0
+board = lilygo-t-display-s3
+framework = arduino
+board_build.flash_mode = dio
+```
+
+Platform `6.5.0` supplies Arduino-ESP32 `2.0.14`. The display uses `TFT_eSPI 2.5.43` with its T-Display-S3 `Setup206` configuration. These versions and DIO flash mode are intentional: later framework combinations and QIO caused display/reset or boot problems on the tested hardware.
 
 ## One-button controls
 
-Actions are classified only when the button is released:
+Actions are classified when the button is released:
 
-- tap `< 450 ms`;
-- hold `450–1199 ms`;
-- long hold `>= 1200 ms`.
+- tap: less than 450 ms;
+- hold: 450–1199 ms;
+- long hold: 1200 ms or longer.
 
-Idle:
+| Screen | Tap | Hold | Long hold |
+| --- | --- | --- | --- |
+| Idle | Open Inbox | Open Send | Open Info |
+| Inbox | Next message | Mark current message read | Back |
+| Send | Next preset | Send selected preset | Back |
+| Info | Next info page | Cycle and save accent | Back |
 
-- tap → Inbox
-- hold → Send
-- long hold → Info
+Holding the button for about five seconds during startup forces setup mode. The low-level driver only reports duration; Morse can later use the same hardware with a different interpretation profile.
 
-Inbox:
+## Build and flash
 
-- tap → next message
-- hold → mark current message read
-- long hold → back
-
-Send:
-
-- tap → next preset
-- hold → send
-- long hold → back
-
-Info:
-
-- tap → next info page
-- hold → cycle the accent color and save it
-- long hold → back
-
-Holding the button for about five seconds **during startup** opens configuration mode. The low-level button driver only reports press/release duration, so a future Morse input profile can use different thresholds without changing hardware code.
-
-## Install development tools
-
-Recommended: VS Code + the PlatformIO extension. Or install PlatformIO Core and use its `pio` command.
-
-The project pins:
-
-```ini
-platform = espressif32@7.0.1
-board = lilygo-t-display-s3
-framework = arduino
-```
-
-Libraries are also pinned in `platformio.ini` for reproducible builds.
-
-## Before the first flash
-
-### 1. Set the GitHub repository slug
-
-Edit:
-
-```cpp
-// include/BuildConfig.h
-constexpr const char* kGitHubRepository = "YOUR_GITHUB_NAME/friendbox";
-```
-
-This is public metadata, not a secret. If it remains `CHANGE_ME/CHANGE_ME`, OTA checking is disabled.
-
-### 2. Set up the MQTT broker
-
-Follow [`docs/HIVEMQ_SETUP.md`](docs/HIVEMQ_SETUP.md). Do **not** put MQTT credentials into source code.
-
-### 3. Build
+Install VS Code with PlatformIO, or PlatformIO Core. Then:
 
 ```bash
 pio run -e friendbox
-```
-
-### 4. Flash over USB-C
-
-```bash
 pio run -e friendbox -t upload
-```
-
-Then watch logs if needed:
-
-```bash
 pio device monitor
 ```
 
-If USB upload does not enter the bootloader automatically, use LILYGO's documented boot-mode procedure for the T-Display-S3 and try the upload again.
+On the current Windows development machine, normal esptool stub uploads can disconnect partway through. The reliable recovery path is ROM download mode—hold BOOT, tap RST, release BOOT—and an equivalent esptool flash command using `--no-stub`. This is a USB/upload-tooling issue, not an application failure.
 
-## First boot
+`include/BuildConfig.h` already points OTA at `Playwhiteshark/friendbox`. Change `kGitHubRepository` only when building a fork that will publish its own releases.
 
-On an unconfigured box, the display shows a setup AP named approximately:
+## First boot and setup
 
-```text
-FriendBox-Setup-A1B2
-```
-
-Connect your phone to it. The WiFiManager captive portal lets you select normal Wi-Fi and asks for:
-
-- your FriendBox display name;
-- room code/password (leave **both blank** to create a room; fill both to join);
-- MQTT host/port/username/password;
-- accent name;
-- UTC offset, populated from the phone by a small browser script where supported.
-
-If a room is created, the device displays its generated code/password. The same values are always available later on the Info screen.
-
-To change Wi-Fi, room, MQTT settings, or name, hold the button for about five seconds during boot. To create a fresh room from that portal, clear both room fields. Changing rooms clears the local message history; changing only Wi-Fi/broker/name does not.
-
-## Room and protocol design
-
-A room is not a server object. Both boxes derive:
+An unconfigured device creates an AP using its full stable device ID:
 
 ```text
-SHA256("friendbox-v1|" + groupCode + "|" + groupPassword)
+FriendBox-Setup-<12-hex-character-device-id>
 ```
 
-and use the first 32 hex characters as a room token:
+Connect a phone to that network and open the captive portal. Normal setup asks for:
+
+- display name;
+- room code/password, or both blank to create a room;
+- accent color; and
+- UTC offset, normally filled from the phone.
+
+MQTT settings are under **Advanced service settings**. For boxes prepared by the developer, [local provisioning](docs/LOCAL_PROVISIONING.md) seeds those values into NVS during the first private USB build, so a friend normally never types them. A public build on an erased device has no private defaults and must be configured manually.
+
+Hold the button for about five seconds during boot to reopen setup. Changing rooms clears the local inbox; changing only Wi-Fi, broker, name, time zone, or accent does not.
+
+## Rooms and messages
+
+A room is not created on a FriendBox server. Every box independently derives the same token from the same credentials:
 
 ```text
-friendbox/v1/rooms/<roomToken>/messages
+SHA256("friendbox-v1|" + roomCode + "|" + roomPassword)
 ```
 
-Message payloads are small JSON documents:
+The first 32 hexadecimal characters become the MQTT topic component:
+
+```text
+friendbox/v1/rooms/<room-token>/messages
+```
+
+Entering unused credentials therefore creates an empty room rather than returning “room not found.”
+
+Current messages are JSON documents:
 
 ```json
 {
@@ -165,58 +174,46 @@ Message payloads are small JSON documents:
 }
 ```
 
-QoS 1 is at-least-once delivery, so each incoming ID is checked against the local 50-message store before insertion. The sender also ignores its own room publication.
+The protocol reserves `type` for future features, but the current parser intentionally accepts only `text`. QoS 1 can redeliver a packet, so the inbox rejects duplicate IDs; each sender also ignores its own publication when the broker sends it back through the shared topic.
 
-## Persistent inbox
+There is no outgoing offline queue. If the sending box is disconnected, the UI reports that the message was not sent. A disconnected receiving box may receive broker-queued QoS 1 messages after reconnect because the MQTT client uses a stable ID and a persistent session; that behavior still needs longer-duration validation.
 
-Messages are stored in NVS in 50 independent slots. Each record has a local sequence number and read/unread flag. When all slots are occupied, the store overwrites the **oldest read** message first; only when every message is unread does it overwrite the oldest unread message. One arrival updates one message slot rather than rewriting a giant history blob.
+## Persistent storage
 
-## OTA
+`DeviceConfig` stores settings in the `fbconfig` NVS namespace. `MessageStore` keeps up to 50 independently persisted message slots in `fbmsgs`, including sequence and unread state. When full, it replaces the oldest read message first; if all messages are unread, it replaces the oldest unread message.
 
-See [`docs/GITHUB_OTA.md`](docs/GITHUB_OTA.md).
+Private compile-time broker defaults are a one-time bootstrap only. Once service settings exist in NVS, NVS is authoritative and later builds do not overwrite them.
 
-Normal pushes only compile/test in CI. A tag such as:
+## OTA and releases
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
+Normal pushes and pull requests run tests and compile the complete firmware. Only a numeric tag such as `v0.1.0` creates `firmware.bin`, `manifest.json`, and a GitHub Release. No release tag should be created until the intended first-release behavior is frozen and the hardware OTA checklist is complete.
 
-runs the release workflow, producing:
+See [GitHub release OTA](docs/GITHUB_OTA.md) for the release flow and security checks.
 
-```text
-firmware.bin
-manifest.json
-```
+## Tests and project documentation
 
-Devices periodically fetch the stable GitHub “latest release asset” manifest URL. OTA HTTPS uses ESP-IDF's X.509 root certificate bundle. Firmware is written to the inactive partition while its SHA-256 is calculated; the boot partition is changed only after size/hash/image validation succeeds.
-
-## Validation status
-
-See [`docs/VALIDATION.md`](docs/VALIDATION.md) for what was actually executed before packaging and what still requires a physical board/live services.
-
-## Tests
-
-Run the full local check script:
+Run all available local checks with:
 
 ```bash
 ./scripts/check.sh
 ```
 
-It runs the host core tests, manifest tests, repository/partition/TLS checks, and a complete PlatformIO firmware build when `pio` is installed. GitHub Actions always performs the complete PlatformIO firmware build on every push/PR. Hardware validation is intentionally small and high-value; follow [`docs/HARDWARE_VALIDATION.md`](docs/HARDWARE_VALIDATION.md).
+The script runs host tests and repository validators, then also performs the PlatformIO firmware build when `pio` is installed. CI always installs PlatformIO and runs the full build.
 
-## What is easy to change later
+- [Architecture and repository map](docs/ARCHITECTURE.md)
+- [Local MQTT provisioning](docs/LOCAL_PROVISIONING.md)
+- [HiveMQ Cloud setup](docs/HIVEMQ_SETUP.md)
+- [GitHub release OTA](docs/GITHUB_OTA.md)
+- [Validation status](docs/VALIDATION.md)
+- [Physical validation checklist](docs/HARDWARE_VALIDATION.md)
+- [Implementation references](docs/REFERENCES.md)
 
-- **Button pin:** one constant in `BuildConfig.h`.
-- **Button interpretation:** `InputMapper`, without touching the GPIO driver.
-- **Colors:** palette mapping in `Display::accentColor()`; selected value stored in config.
-- **Screen visuals:** only `src/display/Display.cpp` draws pixels/text.
-- **Navigation:** `App::handleInput()` + lightweight `Ui` state.
-- **Canned messages:** `kPresets` in `src/ui/Ui.cpp`.
-- **Morse:** add a different input profile and screen; button driver already exposes durations.
-- **New message types:** extend `Message` handling; transport/store do not need redesign.
-- **Broker/library:** kept behind `MqttTransport`/`MessagingService`.
+## Safe extension points
 
-## Source/reference record
+- New screen: add UI state in `src/ui`, navigation/behavior in `App`, and pixels in `Display`.
+- New persistent setting: add it to `Settings`/`DeviceConfig` and NVS, expose it in `SetupPortal`, then consume it from the relevant feature.
+- Morse: add a compose screen and input profile; keep decoding/timing rules in `FriendBoxCore` where possible.
+- New message type: extend `Message` validation/parsing and `App` handling; do not bury feature behavior in MQTT transport.
+- New broker or transport: replace the implementation behind `MqttTransport`/`MessagingService` without coupling it to screens.
 
-The design and implementation references are listed in [`docs/REFERENCES.md`](docs/REFERENCES.md). The code intentionally follows maintained libraries and vendor APIs instead of reimplementing captive portals, MQTT, JSON, TLS, or display drivers.
+Preserve the main boundary: hardware and transports report facts; `App` and `Ui` decide behavior; `Display` only renders; NVS-owning classes hide persistence details.

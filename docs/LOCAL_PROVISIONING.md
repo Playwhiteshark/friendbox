@@ -1,45 +1,71 @@
 # Local MQTT provisioning
 
-FriendBox can bootstrap MQTT service credentials during the first USB flash without putting those credentials in the public repository or public OTA releases.
+FriendBox can bootstrap MQTT service credentials during the first private USB flash without putting those credentials in the public repository or public OTA releases.
+
+## Files and ownership
+
+| Location | Role |
+| --- | --- |
+| `include/LocalServiceConfig.example.h` | Public template committed to Git |
+| `include/LocalServiceConfig.h` | Developer's real private defaults; excluded by `.gitignore` |
+| `include/ServiceConfig.h` | Public interface that uses private defaults when present and safe empty defaults otherwise |
+| `src/config/DeviceConfig.*` | One-time seeding rule and ongoing NVS ownership |
+| `fbconfig` NVS namespace | Runtime source of truth after initialization |
+
+The private header is a provisioning input, not a permanent configuration authority.
 
 ## One-time developer setup
 
 1. Copy:
 
-   `include/LocalServiceConfig.example.h`
+   ```text
+   include/LocalServiceConfig.example.h
+   ```
 
    to:
 
-   `include/LocalServiceConfig.h`
+   ```text
+   include/LocalServiceConfig.h
+   ```
 
-2. Put the real HiveMQ host, TLS port, username, and password in `LocalServiceConfig.h`.
-3. Do **not** remove the `.gitignore` rule for this file.
+2. Put the real HiveMQ host, TLS port, username, and password in the private file.
+3. Do **not** remove its `.gitignore` rule.
 4. Build and flash the device locally over USB.
 
-On the first boot of a device that has never had MQTT service settings, `DeviceConfig` copies those values into the `fbconfig` NVS namespace and sets the `svcinit` marker.
+On the first boot of a device that has never had meaningful MQTT service settings, `DeviceConfig` copies complete private defaults into the `fbconfig` NVS namespace and sets the `svcinit` marker.
 
-After that, NVS is authoritative. The private compile-time values are not consulted again for that device. Existing broker settings are never silently replaced by later firmware builds.
+The precedence rule is:
 
-## OTA behavior
+```text
+existing NVS service settings
+    > one-time private compile defaults
+    > empty public-build defaults
+```
 
-Public GitHub Actions builds do not have `LocalServiceConfig.h`, so public OTA binaries contain no private MQTT defaults. This is intentional.
+Existing host/username/password values from older firmware are treated as authoritative even when they predate `svcinit`; FriendBox records the marker without replacing them.
 
-The MQTT credentials already stored in the device's NVS partition survive normal OTA application updates because FriendBox updates an OTA application partition, not the NVS data partition.
+## After provisioning
+
+NVS becomes authoritative. Future firmware does not consult the private defaults again for that device, and changing `LocalServiceConfig.h` then reflashing does not rotate an initialized device's credentials.
+
+To intentionally change broker credentials, open setup mode and use **Advanced service settings**. The saved MQTT password is never rendered back into the setup page; leaving the password field blank preserves its current NVS value.
 
 ## Friend setup experience
 
-The normal setup page still requires a complete FriendBox configuration, including valid MQTT service settings, before entering the main application.
+The normal setup page still requires a complete FriendBox configuration. On a locally provisioned box, the service fields are already present, so a friend normally enters only:
 
-On a locally provisioned box, MQTT settings are already in NVS before the setup portal opens. Your friend normally needs only Wi-Fi, their name, room information, and accent color.
+- Wi-Fi credentials;
+- display name;
+- room information, or leaves both room fields blank to create one;
+- accent; and
+- time-zone offset.
 
-MQTT fields remain available under **Advanced service settings** for repairs. The saved MQTT password is never inserted back into the setup HTML. Leaving that password field blank keeps the NVS password unchanged.
+Advanced service fields remain available for repairs without making broker configuration part of the normal product flow.
 
-## Existing devices
+## Public builds and OTA
 
-If a device already has MQTT host/username/password values from an older FriendBox build, this firmware treats those values as authoritative and records `svcinit` without replacing them.
+GitHub Actions does not have `include/LocalServiceConfig.h`, so public builds and release binaries contain no private bootstrap credential.
 
-If you intentionally need to change a provisioned device's broker credentials, use **Advanced service settings**. Simply changing `LocalServiceConfig.h` and reflashing will not rotate an already initialized device.
+Normal OTA writes an application slot, not the NVS partition. MQTT credentials, device settings, and inbox records therefore survive an application update.
 
-## Public/fresh build behavior
-
-A completely erased device flashed from a public GitHub build has no private defaults. Its setup portal therefore requires the MQTT values under Advanced service settings. That fallback is intentional.
+A completely erased device flashed from a public build has no private defaults. Its setup portal requires MQTT host, username, and password under **Advanced service settings**. That fallback is intentional.
