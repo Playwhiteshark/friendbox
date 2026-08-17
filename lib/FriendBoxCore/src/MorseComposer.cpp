@@ -54,6 +54,12 @@ MorseReleaseResult MorseComposer::handleRelease(uint32_t heldMs, uint32_t releas
 
     if (heldMs >= _timing.controlHoldMs) {
         commitCurrent();
+        // The menu intentionally ends the current Morse timing sequence. If
+        // gap tracking remained armed, time spent choosing a command could be
+        // mistaken for a word gap when the composer resumes.
+        _hasRelease = false;
+        _letterCommitted = false;
+        _wordCommitted = false;
         return MorseReleaseResult::ControlRequested;
     }
 

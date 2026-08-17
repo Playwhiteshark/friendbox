@@ -83,6 +83,8 @@ int main() {
     assert(composer.handleRelease(100, 2300) == MorseReleaseResult::SymbolAdded);
     assert(composer.handleRelease(1600, 4700) == MorseReleaseResult::ControlRequested);
     assert(composer.text() == "A E");
+    assert(!composer.update(10000));
+    assert(composer.text() == "A E");
     assert(composer.backspace() && composer.text() == "A ");
     assert(composer.clear() && composer.text().empty());
 
