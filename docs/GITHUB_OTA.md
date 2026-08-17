@@ -79,6 +79,7 @@ Firmware is streamed into the inactive application slot while SHA-256 is calcula
 - boot-partition selection.
 
 The active firmware and NVS are not overwritten during the download. A failed check aborts the inactive-slot write and leaves the current boot target unchanged.
+After selecting the verified boot partition, FriendBox restarts automatically without waiting for USB serial output to drain. This keeps an absent or disconnected serial monitor from blocking the reboot.
 
 ## Partition layout
 
