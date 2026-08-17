@@ -47,7 +47,7 @@ On the current Windows development machine, normal esptool stub uploads repeated
 
 ## OTA validation attempt — 2026-08-18
 
-The `v0.1.0` release workflow passed and published a 1,095,584-byte firmware image plus a matching SHA-256 manifest. A configured device running `0.1.0-dev` had working Wi-Fi and network time but remained on the development version after reboot and the initial update window. A diagnostic USB build then reported `MANIFEST REQUEST`, ESP error `28674`, and `arduino_esp_crt_bundle_attach(): Failed to attach bundle`. Root cause: Arduino-ESP32 2.x exposes the certificate-bundle callback but does not provide bundle data until the application calls its setter. The follow-up fix embeds and initializes a reviewed public-root bundle; its physical OTA retest remains pending.
+The `v0.1.0` release workflow passed and published a 1,095,584-byte firmware image plus a matching SHA-256 manifest. A configured device running `0.1.0-dev` had working Wi-Fi and network time but remained on the development version after reboot and the initial update window. A diagnostic USB build then reported `MANIFEST REQUEST`, ESP error `28674`, and `arduino_esp_crt_bundle_attach(): Failed to attach bundle`. Root cause: Arduino-ESP32 2.x exposes the certificate-bundle callback but does not provide bundle data until the application calls its setter. The follow-up build embedded and initialized a reviewed public-root bundle, reached GitHub, then reported `MANIFEST REQUEST HTTP 302 ERR -1`. ESP-IDF 4.4.6's 512-byte default transmit buffer could not hold GitHub's long signed redirect URL; the next patch uses a 2 KiB transmit buffer for both OTA requests. Physical retest remains pending.
 
 ## Implemented but not fully validated
 

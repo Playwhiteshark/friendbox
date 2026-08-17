@@ -133,6 +133,9 @@ ota_source = (ROOT / "src/update/OtaUpdater.cpp").read_text(encoding="utf-8")
 assert "arduino_esp_crt_bundle_set(kCertificateBundleStart)" in ota_source, (
     "embedded OTA CA bundle is not initialized"
 )
+assert ota_source.count("cfg.buffer_size_tx = kHttpTxBufferBytes;") == 2, (
+    "GitHub release redirects require a transmit buffer large enough for signed asset URLs"
+)
 
 # Embedded code should not depend on C++ exceptions and TLS must never disable verification.
 source_text = "\n".join(
