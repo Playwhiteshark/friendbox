@@ -4,8 +4,6 @@
 
 namespace friendbox::network {
 
-void TimeService::begin() {}
-
 void TimeService::update(bool wifiConnected) {
     if (wifiConnected && !_started) {
         configTime(0, 0, build::kDefaultNtp1, build::kDefaultNtp2);

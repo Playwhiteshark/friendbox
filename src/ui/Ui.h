@@ -1,55 +1,70 @@
 #pragma once
 
-#include <Arduino.h>
-#include "display/Display.h"
-#include "messaging/MessageStore.h"
-#include "config/DeviceConfig.h"
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include "FriendBoxCore.h"
 
 namespace friendbox::ui {
 
-enum class Screen { Idle, Inbox, Send, Info };
+enum class Screen : uint8_t { Idle, Inbox, Send, Info };
+
+enum class IntentType : uint8_t {
+    None,
+    MarkInboxRead,
+    SendPreset,
+    CycleAccent,
+};
+
+struct Intent {
+    IntentType type{IntentType::None};
+    size_t index{0};
+};
+
+struct NavigationContext {
+    size_t inboxCount{0};
+    size_t firstUnreadIndex{0};
+    size_t sendItemCount{0};
+};
 
 class Ui {
 public:
     void begin();
-    void openIdle();
-    void openInbox(const messaging::MessageStore& store);
-    void openSend();
-    void openInfo();
-    Screen screen() const { return _screen; }
+    Intent handleAction(core::ButtonAction action, const NavigationContext& context);
 
-    void nextInbox(const messaging::MessageStore& store);
-    void nextSend();
-    void nextInfo();
+    Screen screen() const { return _screen; }
     size_t inboxIndex() const { return _inboxIndex; }
     size_t sendIndex() const { return _sendIndex; }
     size_t infoPage() const { return _infoPage; }
-    const char* selectedPreset() const;
 
-    void notice(const String& title, const String& body, uint32_t durationMs = 2200);
-    void update();
-    bool dirty() const { return _dirty; }
+    void notice(std::string title, std::string body, uint32_t nowMs,
+                uint32_t durationMs = 2200);
+    void update(uint32_t nowMs);
+    bool noticeActive() const { return _noticeActive; }
+    const std::string& noticeTitle() const { return _noticeTitle; }
+    const std::string& noticeBody() const { return _noticeBody; }
+
+    bool consumeDirty();
     void markDirty() { _dirty = true; }
-    void render(display::Display& display,
-                const config::Settings& settings,
-                const messaging::MessageStore& store,
-                const String& clock,
-                const String& wifi,
-                const String& mqtt,
-                bool mqttConnected,
-                const String& messageWhen);
-
-    static constexpr size_t presetCount() { return 5; }
 
 private:
+    static constexpr size_t kInfoPageCount = 3;
+
     Screen _screen{Screen::Idle};
     size_t _inboxIndex{0};
     size_t _sendIndex{0};
     size_t _infoPage{0};
     bool _dirty{true};
-    String _noticeTitle;
-    String _noticeBody;
+    bool _noticeActive{false};
+    std::string _noticeTitle;
+    std::string _noticeBody;
     uint32_t _noticeUntil{0};
+
+    Intent handleIdleAction(core::ButtonAction action, const NavigationContext& context);
+    Intent handleInboxAction(core::ButtonAction action, const NavigationContext& context);
+    Intent handleSendAction(core::ButtonAction action, const NavigationContext& context);
+    Intent handleInfoAction(core::ButtonAction action);
+    void open(Screen screen);
 };
 
 }  // namespace friendbox::ui

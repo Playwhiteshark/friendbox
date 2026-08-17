@@ -5,6 +5,7 @@
 #include <espMqttClient.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include "BuildConfig.h"
 #include "config/DeviceConfig.h"
 
 namespace friendbox::messaging {
@@ -22,7 +23,7 @@ public:
 private:
     struct Packet {
         uint16_t length{0};
-        char payload[769]{};
+        char payload[build::kMaxMqttPayloadBytes + 1]{};
     };
 
     espMqttClientSecure _client;
@@ -39,7 +40,7 @@ private:
     String _clientId;
     String _topic;
 
-    char _assembly[769]{};
+    char _assembly[build::kMaxMqttPayloadBytes + 1]{};
     size_t _assemblyTotal{0};
     size_t _assemblyReceived{0};
 

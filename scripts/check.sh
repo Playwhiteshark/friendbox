@@ -5,9 +5,15 @@ cd "$(dirname "$0")/.."
 CXX="${CXX:-g++}"
 "$CXX" -std=c++17 -fno-exceptions -fno-rtti -Wall -Wextra -Werror \
   -Ilib/FriendBoxCore/src \
-  lib/FriendBoxCore/src/FriendBoxCore.cpp tests/host/test_core.cpp \
+  lib/FriendBoxCore/src/FriendBoxCore.cpp \
+  lib/FriendBoxCore/src/PresetCatalog.cpp tests/host/test_core.cpp \
   -o /tmp/friendbox-core-tests
 /tmp/friendbox-core-tests
+"$CXX" -std=c++17 -fno-exceptions -fno-rtti -Wall -Wextra -Werror \
+  -Ilib/FriendBoxCore/src -Isrc/ui \
+  src/ui/Ui.cpp tests/host/test_ui.cpp \
+  -o /tmp/friendbox-ui-tests
+/tmp/friendbox-ui-tests
 "$CXX" -std=c++17 -fno-exceptions -fno-rtti -Wall -Wextra -Werror \
   -Iinclude tests/host/test_service_config.cpp \
   -o /tmp/friendbox-service-tests

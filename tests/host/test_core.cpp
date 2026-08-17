@@ -1,4 +1,5 @@
 #include "FriendBoxCore.h"
+#include "PresetCatalog.h"
 
 #include <cassert>
 #include <iostream>
@@ -44,6 +45,14 @@ int main() {
     slots[2].read = false;
     slots[1].read = false;
     assert(selectReplacementSlot(slots) == 0); // oldest overall
+
+    PresetCatalog presets;
+    assert(presets.count() == PresetCatalog::kCapacity);
+    assert(presets.at(0) && *presets.at(0) == "HELLO");
+    assert(presets.replace(0, "ON MY WAY"));
+    assert(*presets.at(0) == "ON MY WAY");
+    assert(!presets.replace(PresetCatalog::kCapacity, "INVALID"));
+    assert(!presets.replace(0, ""));
 
     std::cout << "FriendBoxCore tests passed\n";
     return 0;

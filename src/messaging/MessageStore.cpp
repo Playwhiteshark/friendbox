@@ -118,7 +118,7 @@ String MessageStore::serializeStored(const StoredMessage& stored) const {
     doc["sid"] = stored.message.senderId;
     doc["sender"] = stored.message.sender;
     doc["ts"] = stored.message.timestamp;
-    doc["type"] = stored.message.type;
+    doc["type"] = messageTypeName(stored.message.type);
     doc["text"] = stored.message.text;
     String output;
     serializeJson(doc, output);
@@ -137,7 +137,7 @@ bool MessageStore::parseStored(const String& json, uint8_t slot, StoredMessage& 
     parsed.message.senderId = String(doc["sid"] | "");
     parsed.message.sender = String(doc["sender"] | "");
     parsed.message.timestamp = doc["ts"] | 0U;
-    parsed.message.type = String(doc["type"] | "");
+    if (!parseMessageType(String(doc["type"] | ""), parsed.message.type)) return false;
     parsed.message.text = String(doc["text"] | "");
     if (parsed.sequence == 0 || !parsed.message.valid()) return false;
     out = parsed;

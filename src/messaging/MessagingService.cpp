@@ -3,9 +3,8 @@
 
 namespace friendbox::messaging {
 
-bool MessagingService::begin(config::DeviceConfig& deviceConfig, MessageStore& store) {
+bool MessagingService::begin(config::DeviceConfig& deviceConfig) {
     _config = &deviceConfig;
-    _store = &store;
     return _transport.begin(deviceConfig.settings());
 }
 
@@ -20,20 +19,18 @@ bool MessagingService::sendText(const String& text, uint32_t timestamp) {
     message.senderId = _config->settings().deviceId;
     message.sender = _config->settings().displayName;
     message.timestamp = timestamp;
-    message.type = "text";
+    message.type = MessageType::Text;
     message.text = text;
     return message.valid() && _transport.publish(message.toJson());
 }
 
 bool MessagingService::pollIncoming(Message& message) {
-    if (!_config || !_store) return false;
+    if (!_config) return false;
     String payload;
     while (_transport.pollPayload(payload)) {
         Message parsed;
         if (!Message::fromJson(reinterpret_cast<const uint8_t*>(payload.c_str()), payload.length(), parsed)) continue;
         if (parsed.senderId == _config->settings().deviceId) continue;
-        if (_store->containsId(parsed.id)) continue;
-        if (!_store->add(parsed)) continue;
         message = parsed;
         return true;
     }

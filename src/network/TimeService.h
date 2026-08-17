@@ -4,7 +4,6 @@
 namespace friendbox::network {
 class TimeService {
 public:
-    void begin();
     void update(bool wifiConnected);
     bool valid() const;
     uint32_t epoch() const;

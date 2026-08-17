@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include "FriendBoxCore.h"
+#include "ProductInfo.h"
 #include "ServiceConfig.h"
 
 namespace friendbox::config {
@@ -21,7 +22,7 @@ struct Settings {
     core::Accent accent{core::Accent::Cyan};
 
     String setupApName() const {
-        return "FriendBox-Setup-" + deviceId;
+        return String(product::kSetupApPrefix) + deviceId;
     }
 
     bool hasRoom() const {
@@ -40,16 +41,29 @@ struct Settings {
     }
 };
 
+// A copy of only the user-editable fields. Setup UIs modify this draft and
+// DeviceConfig validates and commits it in one place; they never mutate live
+// settings or derived identifiers directly.
+struct SettingsDraft {
+    String displayName;
+    String groupCode;
+    String groupPassword;
+    String mqttHost;
+    uint16_t mqttPort{service::kDefaultMqttTlsPort};
+    String mqttUsername;
+    String mqttPassword;
+    int16_t utcOffsetMinutes{0};
+    core::Accent accent{core::Accent::Cyan};
+};
+
+enum class RoomAction : uint8_t { Create, Join };
+
 class DeviceConfig {
 public:
     bool begin();
     const Settings& settings() const { return _settings; }
-    Settings& mutableSettings() { return _settings; }
-
-    bool save();
-    bool createRoom();
-    bool joinRoom(String code, String password);
-    void clearRoom();
+    SettingsDraft draft() const;
+    bool apply(SettingsDraft draft, RoomAction roomAction);
     uint32_t nextOutgoingCounter();
     bool setAccent(core::Accent accent);
 
@@ -62,11 +76,16 @@ private:
     uint32_t _outCounter{0};
     bool _serviceSeededThisBoot{false};
 
-    String makeDeviceId();
-    bool deriveRoomToken();
+    String makeDeviceId() const;
+    void loadSettings();
+    bool ensureDeviceId();
+    bool normalizeStoredRoom();
+    bool deriveRoomToken(Settings& settings) const;
+    void createRoomCredentials(Settings& settings) const;
+    bool saveSettings(const Settings& settings);
     bool seedLocalServiceDefaultsIfNeeded();
-    bool saveServiceSettings();
-    bool hasMeaningfulStoredServiceSettings() const;
+    bool saveServiceSettings(const Settings& settings);
+    bool hasMeaningfulStoredServiceSettings(const Settings& settings) const;
 };
 
 }  // namespace friendbox::config

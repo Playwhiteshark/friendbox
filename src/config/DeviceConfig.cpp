@@ -8,6 +8,8 @@ namespace friendbox::config {
 namespace {
 constexpr const char* kNamespace = "fbconfig";
 constexpr const char* kRoomAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+// Protocol identifier, not branding. Changing it would split existing rooms.
+constexpr const char* kRoomTokenPrefix = "friendbox-v1|";
 
 // NVS keys are intentionally centralized here and kept below NVS's 15-char
 // key-name limit.
@@ -29,12 +31,14 @@ constexpr const char* kOutgoingCounterKey = "outctr";
 bool DeviceConfig::begin() {
     if (!_prefs.begin(kNamespace, false)) return false;
 
-    _settings.deviceId = _prefs.getString(kDeviceKey, "");
-    if (_settings.deviceId.isEmpty()) {
-        _settings.deviceId = makeDeviceId();
-        _prefs.putString(kDeviceKey, _settings.deviceId);
-    }
+    loadSettings();
+    if (!ensureDeviceId()) return false;
+    if (!seedLocalServiceDefaultsIfNeeded()) return false;
+    return normalizeStoredRoom();
+}
 
+void DeviceConfig::loadSettings() {
+    _settings.deviceId = _prefs.getString(kDeviceKey, "");
     _settings.displayName = _prefs.getString(kNameKey, "");
     _settings.groupCode = _prefs.getString(kGroupKey, "");
     _settings.groupPassword = _prefs.getString(kGroupPasswordKey, "");
@@ -49,51 +53,53 @@ bool DeviceConfig::begin() {
         _settings.accent = core::Accent::Cyan;
     }
     _outCounter = _prefs.getUInt(kOutgoingCounterKey, 0);
+}
 
-    // Migration-safe bootstrap behavior:
-    // - existing NVS service values always win;
-    // - local private defaults seed only a never-configured device;
-    // - once seeded/configured, future firmware images cannot overwrite them.
-    if (!seedLocalServiceDefaultsIfNeeded()) return false;
+bool DeviceConfig::ensureDeviceId() {
+    if (!_settings.deviceId.isEmpty()) return true;
+    _settings.deviceId = makeDeviceId();
+    return _prefs.putString(kDeviceKey, _settings.deviceId) > 0;
+}
 
+bool DeviceConfig::normalizeStoredRoom() {
     if (core::validGroupCode(_settings.groupCode.c_str()) &&
         core::validGroupPassword(_settings.groupPassword.c_str())) {
         const String storedToken = _settings.roomToken;
-        if (deriveRoomToken() && _settings.roomToken != storedToken) {
-            _prefs.putString(kRoomTokenKey, _settings.roomToken);
-        }
+        if (!deriveRoomToken(_settings)) return false;
+        if (_settings.roomToken != storedToken &&
+            _prefs.putString(kRoomTokenKey, _settings.roomToken) == 0) return false;
     } else {
         _settings.roomToken = "";
     }
     return true;
 }
 
-String DeviceConfig::makeDeviceId() {
+String DeviceConfig::makeDeviceId() const {
     const uint64_t chip = ESP.getEfuseMac();
     char id[13];
     snprintf(id, sizeof(id), "%012llx", static_cast<unsigned long long>(chip & 0xFFFFFFFFFFFFULL));
     return String(id);
 }
 
-bool DeviceConfig::hasMeaningfulStoredServiceSettings() const {
+bool DeviceConfig::hasMeaningfulStoredServiceSettings(const Settings& settings) const {
     // A saved port by itself is not meaningful; older FriendBox builds always
     // had a default port value, so it must not block first-time provisioning.
-    return !_settings.mqttHost.isEmpty() ||
-           !_settings.mqttUsername.isEmpty() ||
-           !_settings.mqttPassword.isEmpty();
+    return !settings.mqttHost.isEmpty() ||
+           !settings.mqttUsername.isEmpty() ||
+           !settings.mqttPassword.isEmpty();
 }
 
-bool DeviceConfig::saveServiceSettings() {
+bool DeviceConfig::saveServiceSettings(const Settings& settings) {
     bool ok = true;
-    ok &= _prefs.putString(kMqttHostKey, _settings.mqttHost) > 0 || _settings.mqttHost.isEmpty();
-    ok &= _prefs.putUShort(kMqttPortKey, _settings.mqttPort) > 0;
-    ok &= _prefs.putString(kMqttUserKey, _settings.mqttUsername) > 0 || _settings.mqttUsername.isEmpty();
-    ok &= _prefs.putString(kMqttPasswordKey, _settings.mqttPassword) > 0 || _settings.mqttPassword.isEmpty();
+    ok &= _prefs.putString(kMqttHostKey, settings.mqttHost) > 0 || settings.mqttHost.isEmpty();
+    ok &= _prefs.putUShort(kMqttPortKey, settings.mqttPort) > 0;
+    ok &= _prefs.putString(kMqttUserKey, settings.mqttUsername) > 0 || settings.mqttUsername.isEmpty();
+    ok &= _prefs.putString(kMqttPasswordKey, settings.mqttPassword) > 0 || settings.mqttPassword.isEmpty();
 
     // Mark service configuration as initialized only when there is actual
     // service data. This still allows a completely blank device to be seeded
     // later by a local provisioning build.
-    if (hasMeaningfulStoredServiceSettings()) {
+    if (hasMeaningfulStoredServiceSettings(settings)) {
         ok &= _prefs.putBool(kServiceInitializedKey, true) > 0;
     }
     return ok;
@@ -101,7 +107,7 @@ bool DeviceConfig::saveServiceSettings() {
 
 bool DeviceConfig::seedLocalServiceDefaultsIfNeeded() {
     const bool serviceInitialized = _prefs.getBool(kServiceInitializedKey, false);
-    const bool hasStoredSettings = hasMeaningfulStoredServiceSettings();
+    const bool hasStoredSettings = hasMeaningfulStoredServiceSettings(_settings);
     const bool defaultsAvailable = service::bootstrapDefaultsAvailable();
 
     if (serviceInitialized) return true;
@@ -119,58 +125,90 @@ bool DeviceConfig::seedLocalServiceDefaultsIfNeeded() {
     _settings.mqttUsername = service::kBootstrapDefaults.username;
     _settings.mqttPassword = service::kBootstrapDefaults.password;
 
-    if (!saveServiceSettings()) return false;
+    if (!saveServiceSettings(_settings)) return false;
     _serviceSeededThisBoot = true;
     return true;
 }
 
-bool DeviceConfig::save() {
-    if (_settings.displayName.length() > 24) _settings.displayName.remove(24);
+SettingsDraft DeviceConfig::draft() const {
+    SettingsDraft result;
+    result.displayName = _settings.displayName;
+    result.groupCode = _settings.groupCode;
+    result.groupPassword = _settings.groupPassword;
+    result.mqttHost = _settings.mqttHost;
+    result.mqttPort = _settings.mqttPort;
+    result.mqttUsername = _settings.mqttUsername;
+    result.mqttPassword = _settings.mqttPassword;
+    result.utcOffsetMinutes = _settings.utcOffsetMinutes;
+    result.accent = _settings.accent;
+    return result;
+}
+
+bool DeviceConfig::saveSettings(const Settings& settings) {
     bool ok = true;
-    ok &= _prefs.putString(kNameKey, _settings.displayName) > 0 || _settings.displayName.isEmpty();
-    ok &= _prefs.putString(kGroupKey, _settings.groupCode) > 0 || _settings.groupCode.isEmpty();
-    ok &= _prefs.putString(kGroupPasswordKey, _settings.groupPassword) > 0 || _settings.groupPassword.isEmpty();
-    ok &= _prefs.putString(kRoomTokenKey, _settings.roomToken) > 0 || _settings.roomToken.isEmpty();
-    ok &= saveServiceSettings();
-    ok &= _prefs.putShort(kTimezoneKey, _settings.utcOffsetMinutes) > 0;
-    ok &= _prefs.putUChar(kAccentKey, static_cast<uint8_t>(_settings.accent)) > 0;
+    ok &= _prefs.putString(kNameKey, settings.displayName) > 0 || settings.displayName.isEmpty();
+    ok &= _prefs.putString(kGroupKey, settings.groupCode) > 0 || settings.groupCode.isEmpty();
+    ok &= _prefs.putString(kGroupPasswordKey, settings.groupPassword) > 0 || settings.groupPassword.isEmpty();
+    ok &= _prefs.putString(kRoomTokenKey, settings.roomToken) > 0 || settings.roomToken.isEmpty();
+    ok &= saveServiceSettings(settings);
+    ok &= _prefs.putShort(kTimezoneKey, settings.utcOffsetMinutes) > 0;
+    ok &= _prefs.putUChar(kAccentKey, static_cast<uint8_t>(settings.accent)) > 0;
     return ok;
 }
 
-bool DeviceConfig::deriveRoomToken() {
-    const String material = "friendbox-v1|" + _settings.groupCode + "|" + _settings.groupPassword;
+bool DeviceConfig::deriveRoomToken(Settings& settings) const {
+    const String material = String(kRoomTokenPrefix) + settings.groupCode + "|" + settings.groupPassword;
     const String full = util::sha256Hex(material);
     if (full.length() != 64) return false;
-    _settings.roomToken = full.substring(0, 32);
+    settings.roomToken = full.substring(0, 32);
     return true;
 }
 
-bool DeviceConfig::createRoom() {
+void DeviceConfig::createRoomCredentials(Settings& settings) const {
     String code;
     code.reserve(6);
-    constexpr size_t alphabetLen = 32;
+    constexpr size_t alphabetLen = sizeof(kRoomAlphabet) - 1;
     for (size_t i = 0; i < 6; ++i) code += kRoomAlphabet[esp_random() % alphabetLen];
 
     char password[7];
     snprintf(password, sizeof(password), "%06u", static_cast<unsigned>(esp_random() % 1000000U));
-    _settings.groupCode = code;
-    _settings.groupPassword = password;
-    return deriveRoomToken() && save();
+    settings.groupCode = code;
+    settings.groupPassword = password;
 }
 
-bool DeviceConfig::joinRoom(String code, String password) {
-    code.toUpperCase();
-    if (!core::validGroupCode(code.c_str()) || !core::validGroupPassword(password.c_str())) return false;
-    _settings.groupCode = code;
-    _settings.groupPassword = password;
-    return deriveRoomToken() && save();
-}
+bool DeviceConfig::apply(SettingsDraft draft, RoomAction roomAction) {
+    draft.displayName.trim();
+    if (draft.displayName.length() > 24) draft.displayName.remove(24);
+    draft.groupCode.trim();
+    draft.groupCode.toUpperCase();
+    draft.groupPassword.trim();
+    draft.mqttHost.trim();
+    draft.mqttUsername.trim();
 
-void DeviceConfig::clearRoom() {
-    _settings.groupCode = "";
-    _settings.groupPassword = "";
-    _settings.roomToken = "";
-    save();
+    if (draft.mqttPort == 0 || draft.utcOffsetMinutes < -840 || draft.utcOffsetMinutes > 840 ||
+        static_cast<uint8_t>(draft.accent) >= static_cast<uint8_t>(core::Accent::Count)) return false;
+
+    Settings candidate = _settings;
+    candidate.displayName = draft.displayName;
+    candidate.mqttHost = draft.mqttHost;
+    candidate.mqttPort = draft.mqttPort;
+    candidate.mqttUsername = draft.mqttUsername;
+    candidate.mqttPassword = draft.mqttPassword;
+    candidate.utcOffsetMinutes = draft.utcOffsetMinutes;
+    candidate.accent = draft.accent;
+
+    if (roomAction == RoomAction::Create) {
+        createRoomCredentials(candidate);
+    } else {
+        if (!core::validGroupCode(draft.groupCode.c_str()) ||
+            !core::validGroupPassword(draft.groupPassword.c_str())) return false;
+        candidate.groupCode = draft.groupCode;
+        candidate.groupPassword = draft.groupPassword;
+    }
+
+    if (!deriveRoomToken(candidate) || !candidate.complete() || !saveSettings(candidate)) return false;
+    _settings = candidate;
+    return true;
 }
 
 uint32_t DeviceConfig::nextOutgoingCounter() {
@@ -181,8 +219,10 @@ uint32_t DeviceConfig::nextOutgoingCounter() {
 }
 
 bool DeviceConfig::setAccent(core::Accent accent) {
+    if (static_cast<uint8_t>(accent) >= static_cast<uint8_t>(core::Accent::Count)) return false;
+    if (_prefs.putUChar(kAccentKey, static_cast<uint8_t>(accent)) == 0) return false;
     _settings.accent = accent;
-    return _prefs.putUChar(kAccentKey, static_cast<uint8_t>(accent)) > 0;
+    return true;
 }
 
 }  // namespace friendbox::config

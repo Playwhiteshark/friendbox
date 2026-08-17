@@ -2,9 +2,11 @@
 
 #include <WiFiManager.h>
 #include "FriendBoxCore.h"
+#include "ProductInfo.h"
 
 namespace friendbox::setup {
 namespace {
+
 const char kHead[] = R"HTML(
 <style>
 body{background:#0c0f12;color:#eef3f6;font-family:system-ui,-apple-system,sans-serif}
@@ -35,89 +37,123 @@ uint16_t parsePort(const String& value, uint16_t fallback) {
     if (parsed < 1 || parsed > 65535) return fallback;
     return static_cast<uint16_t>(parsed);
 }
+
+String accentDatalist() {
+    String html("<datalist id='friendbox-accents'>");
+    for (uint8_t i = 0; i < static_cast<uint8_t>(core::Accent::Count); ++i) {
+        html += "<option value='";
+        html += core::accentName(static_cast<core::Accent>(i));
+        html += "'>";
+    }
+    html += "</datalist>";
+    return html;
 }
 
-SetupResult SetupPortal::run(config::DeviceConfig& config, bool forced) {
-    auto& current = config.mutableSettings();
-    WiFiManager wm;
-    wm.setTitle("FriendBox Setup");
-    wm.setCustomHeadElement(kHead);
-    wm.setConfigPortalBlocking(true);
-    wm.setDarkMode(true);
-    (void)forced;
+class PortalForm {
+public:
+    PortalForm(const config::SettingsDraft& initial, bool configured)
+        : _initial(initial),
+          _portValue(String(initial.mqttPort)),
+          _offsetValue(configured ? String(initial.utcOffsetMinutes) : String("AUTO")),
+          _accentOptionsHtml(accentDatalist()),
+          _name("name", "Your name", _initial.displayName.c_str(), 25),
+          _group("group", "Room code (blank = create)", _initial.groupCode.c_str(), 7),
+          _groupPassword("gpass", "Room password (blank = create)",
+                         _initial.groupPassword.c_str(), 7, "type='password'"),
+          _advancedOpen(
+              "<details><summary><b>Advanced service settings</b></summary>"
+              "<p>Normally leave these unchanged. Leave MQTT password blank to keep the saved password.</p>"),
+          _host("mhost", "MQTT host", _initial.mqttHost.c_str(), 96),
+          _port("mport", "MQTT TLS port", _portValue.c_str(), 6),
+          _username("muser", "MQTT username", _initial.mqttUsername.c_str(), 64),
+          _password("mpass", "MQTT password", "", 96,
+                    "type='password' autocomplete='new-password'"),
+          _advancedClose("</details>"),
+          _accent("accent", "Accent color", core::accentName(_initial.accent), 10,
+                  "list='friendbox-accents' autocomplete='off'"),
+          _accentOptions(_accentOptionsHtml.c_str()),
+          _timezone("tz", "UTC offset minutes (auto from phone)", _offsetValue.c_str(), 7) {}
 
-    char port[7];
-    snprintf(port, sizeof(port), "%u", current.mqttPort);
-    char offset[8];
-    if (current.complete()) snprintf(offset, sizeof(offset), "%d", current.utcOffsetMinutes);
-    else snprintf(offset, sizeof(offset), "AUTO");
-
-    WiFiManagerParameter pName("name", "Your name", current.displayName.c_str(), 25);
-    WiFiManagerParameter pGroup("group", "Room code (blank = create)", current.groupCode.c_str(), 7);
-    WiFiManagerParameter pGroupPass("gpass", "Room password (blank = create)", current.groupPassword.c_str(), 7, "type='password'");
-
-    // Service settings are available for maintenance, but kept out of the
-    // normal setup flow. Never render the saved MQTT password back into HTML.
-    WiFiManagerParameter pAdvancedOpen(
-        "<details><summary><b>Advanced service settings</b></summary>"
-        "<p>Normally leave these unchanged. Leave MQTT password blank to keep the saved password.</p>");
-    WiFiManagerParameter pHost("mhost", "MQTT host", current.mqttHost.c_str(), 96);
-    WiFiManagerParameter pPort("mport", "MQTT TLS port", port, 6);
-    WiFiManagerParameter pUser("muser", "MQTT username", current.mqttUsername.c_str(), 64);
-    WiFiManagerParameter pPass("mpass", "MQTT password", "", 96, "type='password' autocomplete='new-password'");
-    WiFiManagerParameter pAdvancedClose("</details>");
-
-    WiFiManagerParameter pAccent("accent", "Accent color", core::accentName(current.accent), 10,
-                                 "list='friendbox-accents' autocomplete='off'");
-    WiFiManagerParameter pAccentOptions(
-        "<datalist id='friendbox-accents'><option value='cyan'><option value='blue'>"
-        "<option value='green'><option value='orange'><option value='pink'><option value='purple'></datalist>");
-    WiFiManagerParameter pTz("tz", "UTC offset minutes (auto from phone)", offset, 7);
-
-    wm.addParameter(&pName);
-    wm.addParameter(&pGroup);
-    wm.addParameter(&pGroupPass);
-    wm.addParameter(&pAdvancedOpen);
-    wm.addParameter(&pHost);
-    wm.addParameter(&pPort);
-    wm.addParameter(&pUser);
-    wm.addParameter(&pPass);
-    wm.addParameter(&pAdvancedClose);
-    wm.addParameter(&pAccent);
-    wm.addParameter(&pAccentOptions);
-    wm.addParameter(&pTz);
-
-    const String apName = current.setupApName();
-    if (!wm.startConfigPortal(apName.c_str())) return {};
-
-    current.displayName = String(pName.getValue());
-    current.displayName.trim();
-    current.mqttHost = String(pHost.getValue());
-    current.mqttHost.trim();
-    current.mqttPort = parsePort(String(pPort.getValue()), current.mqttPort);
-    current.mqttUsername = String(pUser.getValue());
-    current.mqttUsername.trim();
-
-    // Blank means "keep the secret already in NVS". This is important both
-    // for locally provisioned boxes and for later maintenance visits.
-    String submittedPassword = String(pPass.getValue());
-    if (!submittedPassword.isEmpty()) current.mqttPassword = submittedPassword;
-
-    current.utcOffsetMinutes = parseOffset(String(pTz.getValue()), current.utcOffsetMinutes);
-    current.accent = core::parseAccent(String(pAccent.getValue()).c_str(), current.accent);
-
-    String group = String(pGroup.getValue()); group.trim(); group.toUpperCase();
-    String groupPass = String(pGroupPass.getValue()); groupPass.trim();
-    SetupResult result;
-    if (group.isEmpty() && groupPass.isEmpty()) {
-        if (!config.createRoom()) return {};
-        result.createdRoom = true;
-    } else if (!config.joinRoom(group, groupPass)) {
-        return {};
+    void addTo(WiFiManager& manager) {
+        manager.addParameter(&_name);
+        manager.addParameter(&_group);
+        manager.addParameter(&_groupPassword);
+        manager.addParameter(&_advancedOpen);
+        manager.addParameter(&_host);
+        manager.addParameter(&_port);
+        manager.addParameter(&_username);
+        manager.addParameter(&_password);
+        manager.addParameter(&_advancedClose);
+        manager.addParameter(&_accent);
+        manager.addParameter(&_accentOptions);
+        manager.addParameter(&_timezone);
     }
 
-    result.saved = config.save() && current.complete();
-    return result;
+    config::SettingsDraft submitted() {
+        config::SettingsDraft result = _initial;
+        result.displayName = String(_name.getValue());
+        result.groupCode = String(_group.getValue());
+        result.groupPassword = String(_groupPassword.getValue());
+        result.mqttHost = String(_host.getValue());
+        result.mqttPort = parsePort(String(_port.getValue()), _initial.mqttPort);
+        result.mqttUsername = String(_username.getValue());
+
+        const String submittedPassword(_password.getValue());
+        if (!submittedPassword.isEmpty()) result.mqttPassword = submittedPassword;
+
+        result.utcOffsetMinutes = parseOffset(String(_timezone.getValue()),
+                                              _initial.utcOffsetMinutes);
+        result.accent = core::parseAccent(String(_accent.getValue()).c_str(),
+                                          _initial.accent);
+        return result;
+    }
+
+private:
+    config::SettingsDraft _initial;
+    String _portValue;
+    String _offsetValue;
+    String _accentOptionsHtml;
+    WiFiManagerParameter _name;
+    WiFiManagerParameter _group;
+    WiFiManagerParameter _groupPassword;
+    WiFiManagerParameter _advancedOpen;
+    WiFiManagerParameter _host;
+    WiFiManagerParameter _port;
+    WiFiManagerParameter _username;
+    WiFiManagerParameter _password;
+    WiFiManagerParameter _advancedClose;
+    WiFiManagerParameter _accent;
+    WiFiManagerParameter _accentOptions;
+    WiFiManagerParameter _timezone;
+};
+
+bool requestsNewRoom(const config::SettingsDraft& draft) {
+    String code = draft.groupCode;
+    String password = draft.groupPassword;
+    code.trim();
+    password.trim();
+    return code.isEmpty() && password.isEmpty();
+}
+
+}  // namespace
+
+SetupResult SetupPortal::run(config::DeviceConfig& config) {
+    WiFiManager manager;
+    manager.setTitle(product::kSetupTitle);
+    manager.setCustomHeadElement(kHead);
+    manager.setConfigPortalBlocking(true);
+    manager.setDarkMode(true);
+
+    PortalForm form(config.draft(), config.settings().complete());
+    form.addTo(manager);
+    if (!manager.startConfigPortal(config.settings().setupApName().c_str())) return {};
+
+    const config::SettingsDraft submitted = form.submitted();
+    const bool createRoom = requestsNewRoom(submitted);
+    const config::RoomAction roomAction = createRoom ? config::RoomAction::Create
+                                                     : config::RoomAction::Join;
+    const bool saved = config.apply(submitted, roomAction);
+    return {saved, saved && createRoom};
 }
 
 }  // namespace friendbox::setup

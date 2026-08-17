@@ -25,7 +25,8 @@ FriendBox deliberately has no application server, room database, user-account sy
 button release
     -> ButtonDriver measures duration
     -> InputMapper classifies tap/hold/long hold
-    -> App applies the action to Ui or MessagingService
+    -> Ui updates navigation state and emits an intent
+    -> App performs any messaging/configuration side effect
     -> Display redraws the current screen
 
 outgoing message
@@ -35,8 +36,9 @@ outgoing message
 
 incoming MQTT packet
     -> MqttTransport assembles and queues the payload
-    -> MessagingService parses, ignores self-echoes, and deduplicates
-    -> MessageStore persists it in NVS
+    -> MessagingService parses and ignores self-echoes
+    -> App routes the message by its typed protocol kind
+    -> MessageStore deduplicates and persists text messages in NVS
     -> Ui shows a notification and unread count
 ```
 
@@ -52,21 +54,22 @@ For the full component map, startup lifecycle, storage layout, data flows, and e
 | `src/app/` | Startup, main loop, and coordination between subsystems |
 | `src/hardware/` | Board power/backlight setup and raw button timing |
 | `src/input/` | Maps a released-button duration to a UI action |
-| `src/ui/` | Screen state, selection state, navigation state, and preset messages |
-| `src/display/` | All TFT drawing and RGB565 color mapping |
-| `src/config/` | Device settings, identity, room derivation, and `fbconfig` NVS access |
-| `src/setup/` | WiFiManager captive portal and setup form |
+| `src/ui/` | Testable screen/navigation state, UI intents, and rendering coordination |
+| `src/display/` | TFT primitives, per-screen drawing, and RGB565 color mapping |
+| `src/config/` | Device settings drafts, validation, identity, room derivation, and `fbconfig` NVS access |
+| `src/setup/` | WiFiManager captive portal form; submits a settings draft |
 | `src/network/` | Wi-Fi reconnect and NTP time |
 | `src/messaging/` | Message JSON, MQTT transport, inbox logic, and `fbmsgs` NVS access |
 | `src/update/` | GitHub manifest checks and A/B OTA installation |
 | `src/util/` | ESP32-specific hashing helpers |
-| `lib/FriendBoxCore/` | Host-testable rules with no Arduino dependency |
+| `lib/FriendBoxCore/` | Host-testable rules and the mutable preset catalog, with no Arduino dependency |
 | `include/BuildConfig.h` | Pins, timing thresholds, limits, intervals, and public repo slug |
+| `include/ProductInfo.h` | User-facing name/title/setup identity; deliberately separate from protocol constants |
 | `include/ServiceConfig.h` | Public MQTT bootstrap interface and safe empty defaults |
 | `include/LocalServiceConfig.h` | Private local MQTT defaults; gitignored and never in public OTA builds |
 | `platformio.ini` | Board, framework, flash mode, language standard, and pinned libraries |
 | `partitions.csv` | A/B application slots, OTA metadata, and NVS layout |
-| `tests/host/` | Desktop tests for portable core and manifest logic |
+| `tests/host/` | Desktop tests for portable core, presets, UI navigation, and manifest logic |
 | `scripts/` | Local checks, project validation, provisioning validation, manifest generation |
 | `.github/workflows/` | CI build and tagged-release pipelines |
 | `docs/` | Architecture, provisioning, broker, OTA, validation, and references |
@@ -210,10 +213,11 @@ The script runs host tests and repository validators, then also performs the Pla
 
 ## Safe extension points
 
-- New screen: add UI state in `src/ui`, navigation/behavior in `App`, and pixels in `Display`.
-- New persistent setting: add it to `Settings`/`DeviceConfig` and NVS, expose it in `SetupPortal`, then consume it from the relevant feature.
+- New screen: add its `Screen` state and intent mapping in `Ui`, render routing in `UiRenderer`, and pixels in `DisplayScreens`.
+- New persistent setting: add it to `SettingsDraft`/`Settings`, validate and persist it in `DeviceConfig`, expose it in `PortalForm`, then consume it from the relevant feature.
+- Configurable presets: persist values through `DeviceConfig`, load them into `PresetCatalog`, and let phone/on-device editors call the catalog rather than editing send-screen code.
 - Morse: add a compose screen and input profile; keep decoding/timing rules in `FriendBoxCore` where possible.
 - New message type: extend `Message` validation/parsing and `App` handling; do not bury feature behavior in MQTT transport.
 - New broker or transport: replace the implementation behind `MqttTransport`/`MessagingService` without coupling it to screens.
 
-Preserve the main boundary: hardware and transports report facts; `App` and `Ui` decide behavior; `Display` only renders; NVS-owning classes hide persistence details.
+Preserve the main boundary: hardware and transports report facts; `Ui` emits navigation intents; `App` coordinates side effects and message routing; `Display` only renders; NVS-owning classes hide persistence details.
