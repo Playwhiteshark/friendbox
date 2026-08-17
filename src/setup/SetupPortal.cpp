@@ -241,7 +241,6 @@ SetupResult SetupPortal::run(config::DeviceConfig& config) {
     manager.setCustomHeadElement(kHead);
     manager.setConfigPortalBlocking(true);
     manager.setDarkMode(true);
-    manager.setShowBack(true);
     manager.setShowInfoErase(false);
     manager.setShowInfoUpdate(false);
     std::vector<const char*> menu{"param", "wifi", "exit"};
