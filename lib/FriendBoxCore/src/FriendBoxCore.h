@@ -14,6 +14,8 @@ enum class Accent : uint8_t {
     Orange,
     Pink,
     Purple,
+    Custom1,
+    Custom2,
     Count
 };
 
@@ -33,6 +35,9 @@ struct SlotMeta {
 const char* accentName(Accent accent);
 Accent parseAccent(const std::string& value, Accent fallback = Accent::Cyan);
 Accent nextAccent(Accent accent);
+uint32_t accentRgb(Accent accent, uint32_t custom1Rgb, uint32_t custom2Rgb);
+bool parseRgbHex(const std::string& value, uint32_t& rgb);
+std::string rgbHex(uint32_t rgb);
 
 ButtonAction classifyRelease(uint32_t heldMs,
                              uint32_t tapMaxMs = 450,

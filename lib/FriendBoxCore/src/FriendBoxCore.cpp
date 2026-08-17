@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstdio>
 #include <limits>
 
 namespace friendbox::core {
@@ -51,6 +52,8 @@ const char* accentName(Accent accent) {
         case Accent::Orange: return "orange";
         case Accent::Pink: return "pink";
         case Accent::Purple: return "purple";
+        case Accent::Custom1: return "custom1";
+        case Accent::Custom2: return "custom2";
         default: return "cyan";
     }
 }
@@ -63,12 +66,51 @@ Accent parseAccent(const std::string& value, Accent fallback) {
     if (v == "orange") return Accent::Orange;
     if (v == "pink") return Accent::Pink;
     if (v == "purple") return Accent::Purple;
+    if (v == "custom1") return Accent::Custom1;
+    if (v == "custom2") return Accent::Custom2;
     return fallback;
 }
 
 Accent nextAccent(Accent accent) {
     const auto next = (static_cast<uint8_t>(accent) + 1U) % static_cast<uint8_t>(Accent::Count);
     return static_cast<Accent>(next);
+}
+
+uint32_t accentRgb(Accent accent, uint32_t custom1Rgb, uint32_t custom2Rgb) {
+    switch (accent) {
+        case Accent::Cyan: return 0x00DCE6;
+        case Accent::Blue: return 0x4687FF;
+        case Accent::Green: return 0x46DC78;
+        case Accent::Orange: return 0xFF9B37;
+        case Accent::Pink: return 0xFF64AF;
+        case Accent::Purple: return 0xAF69FF;
+        case Accent::Custom1: return custom1Rgb & 0xFFFFFFU;
+        case Accent::Custom2: return custom2Rgb & 0xFFFFFFU;
+        default: return 0x00DCE6;
+    }
+}
+
+bool parseRgbHex(const std::string& value, uint32_t& rgb) {
+    size_t start = value.size() == 7 && value[0] == '#' ? 1 : 0;
+    if (value.size() - start != 6) return false;
+    uint32_t parsed = 0;
+    for (size_t i = start; i < value.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(value[i]);
+        uint8_t digit = 0;
+        if (c >= '0' && c <= '9') digit = static_cast<uint8_t>(c - '0');
+        else if (c >= 'a' && c <= 'f') digit = static_cast<uint8_t>(c - 'a' + 10);
+        else if (c >= 'A' && c <= 'F') digit = static_cast<uint8_t>(c - 'A' + 10);
+        else return false;
+        parsed = (parsed << 4U) | digit;
+    }
+    rgb = parsed;
+    return true;
+}
+
+std::string rgbHex(uint32_t rgb) {
+    char output[8];
+    std::snprintf(output, sizeof(output), "#%06X", static_cast<unsigned>(rgb & 0xFFFFFFU));
+    return output;
 }
 
 ButtonAction classifyRelease(uint32_t heldMs, uint32_t tapMaxMs, uint32_t holdMaxMs) {

@@ -47,6 +47,8 @@ bool App::initializePersistentState() {
         _display.fatal("Message storage could not be opened.");
         return false;
     }
+    loadPresets();
+    applyDisplaySettings();
     return true;
 }
 
@@ -81,6 +83,8 @@ bool App::ensureConfigured(bool forced) {
         const auto result = _setup.run(_config);
         if (result.saved && _config.settings().complete()) {
             if (!oldRoom.isEmpty() && oldRoom != _config.settings().roomToken) _store.clear();
+            loadPresets();
+            applyDisplaySettings();
             if (result.createdRoom) {
                 showNotice("ROOM CREATED",
                            _config.settings().groupCode + "  " + _config.settings().groupPassword,
@@ -106,8 +110,10 @@ void App::update() {
 
     hardware::ButtonRelease release;
     if (_button.poll(release)) handleButtonRelease(release);
+    _ui.update(millis(), _button.pressed());
 
     _ota.update(_wifi.connected(), _time.valid(), true);
+    updateBacklight();
     refreshUiIfNeeded();
     renderUi();
     delay(2);
@@ -118,14 +124,26 @@ void App::updateServices() {
     _wifi.update();
     _time.update(_wifi.connected());
     _messaging.update(_wifi.connected());
-    _ui.update(millis());
 }
 
 void App::handleButtonRelease(const hardware::ButtonRelease& release) {
+    const uint32_t now = millis();
+    if (!_screenAwake) {
+        _screenAwake = true;
+        _lastInteractionAt = now;
+        hardware::Board::setBacklight(true);
+        _ui.markDirty();
+        return;
+    }
+    _lastInteractionAt = now;
+    if (_ui.morseEntryActive()) {
+        _ui.handleMorseRelease(release.heldMs, now);
+        return;
+    }
     const ui::NavigationContext context{
         _store.count(),
         _store.firstUnreadIndex(),
-        _presets.count(),
+        _presets.enabledCount(),
     };
     executeIntent(_ui.handleAction(_input.mapRelease(release.heldMs), context));
 }
@@ -140,14 +158,26 @@ void App::executeIntent(const ui::Intent& intent) {
         case ui::IntentType::SendPreset:
             sendPreset(intent.index);
             return;
-        case ui::IntentType::CycleAccent:
-            cycleAccent();
+        case ui::IntentType::BeginMessage:
+            _ui.startMessageComposer(_config.settings().morseTiming);
+            return;
+        case ui::IntentType::BeginPresetEdit: {
+            const std::string* preset = _presets.at(intent.index);
+            _ui.startPresetComposer(intent.index, preset ? *preset : std::string(),
+                                    _config.settings().morseTiming);
+            return;
+        }
+        case ui::IntentType::SendComposed:
+            sendComposed();
+            return;
+        case ui::IntentType::SavePreset:
+            savePreset(intent.index);
             return;
     }
 }
 
 void App::sendPreset(size_t index) {
-    const std::string* preset = _presets.at(index);
+    const std::string* preset = _presets.enabledAt(index);
     if (!preset) return;
     const String text(preset->c_str());
     if (_messaging.sendText(text, _time.valid() ? _time.epoch() : 0)) {
@@ -157,13 +187,51 @@ void App::sendPreset(size_t index) {
     }
 }
 
-void App::cycleAccent() {
-    const auto next = core::nextAccent(_config.settings().accent);
-    if (_config.setAccent(next)) {
-        showNotice("ACCENT", core::accentName(next), 1000);
+void App::sendComposed() {
+    String text(_ui.composedText().c_str());
+    text.trim();
+    if (text.isEmpty()) return;
+    if (_messaging.sendText(text, _time.valid() ? _time.epoch() : 0)) {
+        showNotice("SENT", text);
     } else {
-        showNotice("SETTINGS ERROR", "Accent was not saved");
+        showNotice("NOT CONNECTED", "Message was not sent");
     }
+}
+
+void App::savePreset(size_t index) {
+    if (index >= core::PresetCatalog::kCapacity) return;
+    config::SettingsDraft draft = _config.draft();
+    draft.presets[index] = String(_ui.composedText().c_str());
+    if (!_config.apply(draft, config::RoomAction::Keep)) {
+        showNotice("SETTINGS ERROR", "Preset was not saved");
+        return;
+    }
+    loadPresets();
+    const std::string* saved = _presets.at(index);
+    showNotice(saved && saved->empty() ? "PRESET DISABLED" : "PRESET SAVED",
+               String(index + 1), 1400);
+}
+
+void App::loadPresets() {
+    core::PresetCatalog::Items items;
+    for (size_t i = 0; i < items.size(); ++i) items[i] = _config.settings().presets[i].c_str();
+    _presets.load(items);
+}
+
+void App::applyDisplaySettings() {
+    hardware::Board::setBacklightBrightness(_config.settings().brightnessPercent);
+    hardware::Board::setBacklight(true);
+    _screenAwake = true;
+    _lastInteractionAt = millis();
+    _ui.markDirty();
+}
+
+void App::updateBacklight() {
+    const uint16_t timeout = _config.settings().screenTimeoutSeconds;
+    if (!_screenAwake || timeout == 0) return;
+    if (millis() - _lastInteractionAt < static_cast<uint32_t>(timeout) * 1000U) return;
+    _screenAwake = false;
+    hardware::Board::setBacklight(false);
 }
 
 void App::handleIncoming() {
@@ -177,7 +245,7 @@ bool App::routeIncoming(const messaging::Message& message) {
     switch (message.type) {
         case messaging::MessageType::Text:
             if (_store.containsId(message.id) || !_store.add(message)) return false;
-            showNotice("NEW FROM " + message.sender, message.text);
+            if (_screenAwake) showNotice("NEW FROM " + message.sender, message.text);
             return true;
     }
     return false;
@@ -195,12 +263,14 @@ void App::refreshUiIfNeeded() {
     const bool mqtt = _messaging.connected();
     const size_t unread = _store.unreadCount();
     const String clock = _time.clockText(_config.settings().utcOffsetMinutes);
+    const String ota = _ota.stateLabel();
     if (wifi != _lastWifiLabel || mqtt != _lastMqttConnected ||
-        unread != _lastUnread || clock != _lastClock) {
+        unread != _lastUnread || clock != _lastClock || ota != _lastOtaLabel) {
         _lastWifiLabel = wifi;
         _lastMqttConnected = mqtt;
         _lastUnread = unread;
         _lastClock = clock;
+        _lastOtaLabel = ota;
         _ui.markDirty();
     }
 }
@@ -209,9 +279,10 @@ void App::renderUi() {
     const String clock = _time.clockText(_config.settings().utcOffsetMinutes);
     const String wifi = _wifi.label();
     const String mqtt = _messaging.connected() ? "CONNECTED" : "CONNECTING";
+    const String ota = _ota.stateLabel();
     const String messageTime = selectedMessageTime();
     const ui::RenderContext context{
-        _config.settings(), _store, _presets, clock, wifi, mqtt, messageTime,
+        _config.settings(), _store, _presets, clock, wifi, mqtt, ota, messageTime,
         _messaging.connected(),
     };
     ui::render(_ui, _display, context);

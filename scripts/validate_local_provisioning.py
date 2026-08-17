@@ -33,7 +33,8 @@ assert 'bool DeviceConfig::apply(SettingsDraft draft, RoomAction roomAction)' in
 assert 'mutableSettings' not in config_h
 
 # The saved secret must not be rendered back into the captive portal.
-assert '_password("mpass", "MQTT password", ""' in portal
+assert '_password("mpass", "", "", 96, kHidden)' in portal
+assert "id='fb-mpass' data-target='mpass' type='password' maxlength='96' value=''" in portal
 assert '_initial.mqttPassword.c_str()' not in portal
 assert 'if (!submittedPassword.isEmpty()) result.mqttPassword = submittedPassword;' in portal
 

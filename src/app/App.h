@@ -40,6 +40,9 @@ private:
     bool _lastMqttConnected{false};
     size_t _lastUnread{0};
     String _lastClock;
+    String _lastOtaLabel;
+    bool _screenAwake{true};
+    uint32_t _lastInteractionAt{0};
 
     bool initializePersistentState();
     bool initializeRuntimeServices();
@@ -49,7 +52,11 @@ private:
     void handleButtonRelease(const hardware::ButtonRelease& release);
     void executeIntent(const ui::Intent& intent);
     void sendPreset(size_t index);
-    void cycleAccent();
+    void sendComposed();
+    void savePreset(size_t index);
+    void loadPresets();
+    void applyDisplaySettings();
+    void updateBacklight();
     void handleIncoming();
     bool routeIncoming(const messaging::Message& message);
     void refreshUiIfNeeded();

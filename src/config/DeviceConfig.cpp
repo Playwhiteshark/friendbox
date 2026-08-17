@@ -25,7 +25,21 @@ constexpr const char* kMqttPasswordKey = "mpass";
 constexpr const char* kServiceInitializedKey = "svcinit";
 constexpr const char* kTimezoneKey = "tz";
 constexpr const char* kAccentKey = "accent";
+constexpr const char* kCustomColor1Key = "color1";
+constexpr const char* kCustomColor2Key = "color2";
+constexpr const char* kBrightnessKey = "bright";
+constexpr const char* kScreenTimeoutKey = "timeout";
+constexpr const char* kClockVisibleKey = "clock";
+constexpr const char* kMorseDashKey = "mdot";
+constexpr const char* kMorseLetterKey = "mletter";
+constexpr const char* kMorseWordKey = "mword";
+constexpr const char* kMorseControlKey = "mcontrol";
+constexpr const char* kPresetMaskKey = "pmask";
 constexpr const char* kOutgoingCounterKey = "outctr";
+
+String presetKey(size_t index) {
+    return String("p") + String(index);
+}
 }
 
 bool DeviceConfig::begin() {
@@ -51,6 +65,26 @@ void DeviceConfig::loadSettings() {
     _settings.accent = static_cast<core::Accent>(_prefs.getUChar(kAccentKey, 0));
     if (static_cast<uint8_t>(_settings.accent) >= static_cast<uint8_t>(core::Accent::Count)) {
         _settings.accent = core::Accent::Cyan;
+    }
+    _settings.customColor1 = _prefs.getUInt(kCustomColor1Key, _settings.customColor1) & 0xFFFFFFU;
+    _settings.customColor2 = _prefs.getUInt(kCustomColor2Key, _settings.customColor2) & 0xFFFFFFU;
+    _settings.brightnessPercent = _prefs.getUChar(kBrightnessKey, _settings.brightnessPercent);
+    if (_settings.brightnessPercent < 10 || _settings.brightnessPercent > 100) {
+        _settings.brightnessPercent = 100;
+    }
+    _settings.screenTimeoutSeconds = _prefs.getUShort(kScreenTimeoutKey, 0);
+    if (_settings.screenTimeoutSeconds > 3600) _settings.screenTimeoutSeconds = 0;
+    _settings.clockVisible = _prefs.getBool(kClockVisibleKey, true);
+    _settings.morseTiming.dashThresholdMs = _prefs.getUShort(kMorseDashKey, 300);
+    _settings.morseTiming.letterGapMs = _prefs.getUShort(kMorseLetterKey, 700);
+    _settings.morseTiming.wordGapMs = _prefs.getUShort(kMorseWordKey, 1500);
+    _settings.morseTiming.controlHoldMs = _prefs.getUShort(kMorseControlKey, 1600);
+
+    const uint8_t presetMask = _prefs.getUChar(kPresetMaskKey, 0x1FU);
+    for (size_t i = 0; i < _settings.presets.size(); ++i) {
+        const String key = presetKey(i);
+        if (_prefs.isKey(key.c_str())) _settings.presets[i] = _prefs.getString(key.c_str(), "");
+        if ((presetMask & (1U << i)) == 0) _settings.presets[i] = "";
     }
     _outCounter = _prefs.getUInt(kOutgoingCounterKey, 0);
 }
@@ -141,6 +175,13 @@ SettingsDraft DeviceConfig::draft() const {
     result.mqttPassword = _settings.mqttPassword;
     result.utcOffsetMinutes = _settings.utcOffsetMinutes;
     result.accent = _settings.accent;
+    result.customColor1 = _settings.customColor1;
+    result.customColor2 = _settings.customColor2;
+    result.brightnessPercent = _settings.brightnessPercent;
+    result.screenTimeoutSeconds = _settings.screenTimeoutSeconds;
+    result.clockVisible = _settings.clockVisible;
+    result.morseTiming = _settings.morseTiming;
+    result.presets = _settings.presets;
     return result;
 }
 
@@ -153,6 +194,24 @@ bool DeviceConfig::saveSettings(const Settings& settings) {
     ok &= saveServiceSettings(settings);
     ok &= _prefs.putShort(kTimezoneKey, settings.utcOffsetMinutes) > 0;
     ok &= _prefs.putUChar(kAccentKey, static_cast<uint8_t>(settings.accent)) > 0;
+    ok &= _prefs.putUInt(kCustomColor1Key, settings.customColor1) > 0;
+    ok &= _prefs.putUInt(kCustomColor2Key, settings.customColor2) > 0;
+    ok &= _prefs.putUChar(kBrightnessKey, settings.brightnessPercent) > 0;
+    ok &= _prefs.putUShort(kScreenTimeoutKey, settings.screenTimeoutSeconds) > 0;
+    ok &= _prefs.putBool(kClockVisibleKey, settings.clockVisible) > 0;
+    ok &= _prefs.putUShort(kMorseDashKey, settings.morseTiming.dashThresholdMs) > 0;
+    ok &= _prefs.putUShort(kMorseLetterKey, settings.morseTiming.letterGapMs) > 0;
+    ok &= _prefs.putUShort(kMorseWordKey, settings.morseTiming.wordGapMs) > 0;
+    ok &= _prefs.putUShort(kMorseControlKey, settings.morseTiming.controlHoldMs) > 0;
+
+    uint8_t presetMask = 0;
+    for (size_t i = 0; i < settings.presets.size(); ++i) {
+        if (settings.presets[i].isEmpty()) continue;
+        presetMask |= static_cast<uint8_t>(1U << i);
+        const String key = presetKey(i);
+        ok &= _prefs.putString(key.c_str(), settings.presets[i]) > 0;
+    }
+    ok &= _prefs.putUChar(kPresetMaskKey, presetMask) > 0;
     return ok;
 }
 
@@ -185,8 +244,24 @@ bool DeviceConfig::apply(SettingsDraft draft, RoomAction roomAction) {
     draft.mqttHost.trim();
     draft.mqttUsername.trim();
 
+    for (auto& preset : draft.presets) {
+        preset.trim();
+        if (preset.length() > core::PresetCatalog::kMaxTextLength) {
+            preset.remove(core::PresetCatalog::kMaxTextLength);
+        }
+    }
+
     if (draft.mqttPort == 0 || draft.utcOffsetMinutes < -840 || draft.utcOffsetMinutes > 840 ||
-        static_cast<uint8_t>(draft.accent) >= static_cast<uint8_t>(core::Accent::Count)) return false;
+        static_cast<uint8_t>(draft.accent) >= static_cast<uint8_t>(core::Accent::Count) ||
+        draft.customColor1 > 0xFFFFFFU || draft.customColor2 > 0xFFFFFFU ||
+        draft.brightnessPercent < 10 || draft.brightnessPercent > 100 ||
+        draft.screenTimeoutSeconds > 3600 ||
+        draft.morseTiming.dashThresholdMs < 100 || draft.morseTiming.dashThresholdMs > 1000 ||
+        draft.morseTiming.letterGapMs < 250 || draft.morseTiming.letterGapMs > 3000 ||
+        draft.morseTiming.wordGapMs <= draft.morseTiming.letterGapMs ||
+        draft.morseTiming.wordGapMs > 6000 ||
+        draft.morseTiming.controlHoldMs < 800 || draft.morseTiming.controlHoldMs > 5000 ||
+        draft.morseTiming.controlHoldMs <= draft.morseTiming.dashThresholdMs) return false;
 
     Settings candidate = _settings;
     candidate.displayName = draft.displayName;
@@ -196,10 +271,17 @@ bool DeviceConfig::apply(SettingsDraft draft, RoomAction roomAction) {
     candidate.mqttPassword = draft.mqttPassword;
     candidate.utcOffsetMinutes = draft.utcOffsetMinutes;
     candidate.accent = draft.accent;
+    candidate.customColor1 = draft.customColor1;
+    candidate.customColor2 = draft.customColor2;
+    candidate.brightnessPercent = draft.brightnessPercent;
+    candidate.screenTimeoutSeconds = draft.screenTimeoutSeconds;
+    candidate.clockVisible = draft.clockVisible;
+    candidate.morseTiming = draft.morseTiming;
+    candidate.presets = draft.presets;
 
     if (roomAction == RoomAction::Create) {
         createRoomCredentials(candidate);
-    } else {
+    } else if (roomAction == RoomAction::Join) {
         if (!core::validGroupCode(draft.groupCode.c_str()) ||
             !core::validGroupPassword(draft.groupPassword.c_str())) return false;
         candidate.groupCode = draft.groupCode;
