@@ -17,6 +17,7 @@ struct RenderContext {
     const String& wifi;
     const String& mqtt;
     const String& ota;
+    const String& otaDetail;
     const String& selectedMessageTime;
     bool mqttConnected{false};
 };

@@ -85,7 +85,7 @@ void renderComposerMenu(const Ui& ui, display::Display& display,
 void renderInfo(const Ui& ui, display::Display& display, const RenderContext& context) {
     display.info(ui.infoPage(), context.settings.displayName,
                  context.settings.groupCode, context.settings.groupPassword,
-                 context.wifi, context.mqtt, context.ota,
+                 context.wifi, context.mqtt, context.ota, context.otaDetail,
                  core::accentName(context.settings.accent),
                  FRIEND_BOX_VERSION, activeAccent(context));
 }
