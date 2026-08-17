@@ -136,6 +136,9 @@ assert "arduino_esp_crt_bundle_set(kCertificateBundleStart)" in ota_source, (
 assert ota_source.count("cfg.buffer_size_tx = kHttpTxBufferBytes;") == 2, (
     "GitHub release redirects require a transmit buffer large enough for signed asset URLs"
 )
+assert "Serial.flush()" not in ota_source, (
+    "OTA restart must not wait indefinitely for an attached USB serial host"
+)
 
 # Embedded code should not depend on C++ exceptions and TLS must never disable verification.
 source_text = "\n".join(

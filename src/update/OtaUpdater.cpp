@@ -201,7 +201,6 @@ void OtaUpdater::runCheck() {
     if (!installFirmware(url, sha, size)) return;
 
     Serial.println("[OTA] Install complete; restarting");
-    Serial.flush();
     delay(100);
     esp_restart();
 }
