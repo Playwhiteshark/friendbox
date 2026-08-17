@@ -57,7 +57,7 @@ After the initial boot delay, and then approximately every 12 hours, a configure
 https://github.com/<owner>/<repo>/releases/latest/download/manifest.json
 ```
 
-The request uses HTTPS certificate verification through the public-root bundle embedded from `data/cert/x509_crt_bundle.bin`. Arduino-ESP32 2.x does not populate its TLS callback automatically, so `OtaUpdater::begin()` installs the embedded bundle before any request. The device accepts a manifest only when:
+The request uses HTTPS certificate verification through the public-root bundle embedded from `data/cert/x509_crt_bundle.bin`. Arduino-ESP32 2.x does not populate its TLS callback automatically, so `OtaUpdater::begin()` installs the embedded bundle before any request. Its HTTP transmit buffer is also enlarged from the ESP-IDF default because GitHub release assets redirect to long signed URLs. The device accepts a manifest only when:
 
 - `schema` is `1`;
 - `version` is strict numeric `MAJOR.MINOR.PATCH`;

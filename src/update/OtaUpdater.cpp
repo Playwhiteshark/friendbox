@@ -21,6 +21,7 @@ constexpr uint32_t kManifestTimeoutMs = 30000;
 constexpr uint32_t kFirmwareTimeoutMs = 60000;
 constexpr uint32_t kOtaTaskStackBytes = 12288;
 constexpr size_t kMinimumFirmwareBytes = 65536;
+constexpr int kHttpTxBufferBytes = 2048;
 constexpr int kMaxRedirects = 5;
 
 extern const uint8_t kCertificateBundleStart[]
@@ -222,6 +223,7 @@ bool OtaUpdater::fetchManifest(String& version, String& url, String& sha256, siz
     esp_http_client_config_t cfg{};
     cfg.url = manifestUrl.c_str();
     cfg.timeout_ms = kManifestTimeoutMs;
+    cfg.buffer_size_tx = kHttpTxBufferBytes;
     cfg.max_redirection_count = kMaxRedirects;
     cfg.crt_bundle_attach = arduino_esp_crt_bundle_attach;
     cfg.event_handler = manifestEvent;
@@ -317,6 +319,7 @@ bool OtaUpdater::installFirmware(const String& url, const String& expectedSha256
     esp_http_client_config_t cfg{};
     cfg.url = url.c_str();
     cfg.timeout_ms = kFirmwareTimeoutMs;
+    cfg.buffer_size_tx = kHttpTxBufferBytes;
     cfg.max_redirection_count = kMaxRedirects;
     cfg.crt_bundle_attach = arduino_esp_crt_bundle_attach;
     cfg.event_handler = firmwareEvent;
