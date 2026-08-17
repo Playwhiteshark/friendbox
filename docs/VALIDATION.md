@@ -1,56 +1,59 @@
 # Validation status
 
-This file separates checks that were actually executed from checks that require the physical T-Display-S3 or a networked PlatformIO runner.
+This file records what has actually passed. It deliberately separates automated checks, physical results, and remaining hardware work.
 
-## Executed before packaging
+## Automated checks
 
-The following checks were run against this repository:
+The `build` workflow runs on every push and pull request. The latest `main` run for commit `1c66ac7` passed on 2026-08-15 and included:
 
-- `FriendBoxCore` compiled with GCC using C++17, `-Wall -Wextra -Werror`, `-fno-exceptions`, and `-fno-rtti`.
-- Host unit tests passed for accent parsing/cycling, one-button timing boundaries, group-code/password validation, semantic-version parsing/comparison (including malformed and overflow inputs), and inbox replacement policy.
-- OTA manifest-generation tests passed, including version, size, SHA-256, and release-asset URL checks.
-- Both GitHub Actions workflow YAML files parsed successfully.
-- Repository validation passed for pinned dependencies, board target, OTA partitions, configurable external button, message-store size, bounded MQTT receive queue, and absence of common committed secret-token formats.
-- The embedded MQTT CA was extracted and successfully parsed with OpenSSL as `ISRG Root X1`; its public certificate is sourced from Let's Encrypt.
-- The source was checked for accidental `setInsecure()` TLS use and exception-dependent embedded code.
+- host compilation/tests for `FriendBoxCore` behavior;
+- host tests for local service bootstrap precedence;
+- OTA manifest-generation tests;
+- repository checks for the pinned board/toolchain/libraries;
+- partition alignment, size, and equal A/B application-slot checks;
+- configured GitHub repository-slug verification in CI;
+- MQTT CA extraction and OpenSSL certificate parsing;
+- checks against disabled TLS verification and common committed token formats; and
+- a complete `pio run -e friendbox` firmware build.
 
-## API/documentation verification
+The host core coverage includes accent parsing/cycling, button timing boundaries, room credential validation, strict numeric semantic-version comparison (including malformed/overflow input), and inbox replacement policy.
 
-Implementation calls were checked against the maintained/vendor interfaces used by the repository:
+Run the same local entry point with:
 
-- LILYGO's T-Display-S3 Arduino_GFX example for display/peripheral pins.
-- PlatformIO's `lilygo-t-display-s3` board target and Espressif32 platform.
-- WiFiManager 2.0.17 constructors and captive-portal methods.
-- espMqttClient 1.7.3 TLS, QoS, persistent-session, callback, constructor, and client-ID-size APIs.
-- ESP-IDF HTTP client, x509 certificate bundle, OTA partition/write, SHA-256, and post-boot validation APIs compatible with the Arduino framework bundled by the pinned PlatformIO platform. The pinned PlatformIO platform selects Arduino-ESP32 2.0.17; that ESP32-S3 SDK configuration enables both the full certificate bundle and bootloader app rollback.
-- HiveMQ Cloud's username/password authentication and topic-filter permission model.
-- GitHub's Release/tag model and stable latest-release asset links.
+```bash
+./scripts/check.sh
+```
 
-## Not claimed as physically validated yet
+If PlatformIO is installed, it includes the complete firmware build; otherwise the script explicitly reports that only host/repository checks ran.
 
-These checks cannot be truthfully completed without the actual board and/or a live broker/repository:
-
-1. Full PlatformIO firmware compile in the packaging environment. PlatformIO Core is not installed here and this shell cannot reach package registries. The included GitHub `build` workflow performs that exact full build on every push/PR.
-2. LCD orientation/backlight appearance on the user's exact T-Display-S3 board revision.
-3. GPIO1 external-button electrical smoke test.
-4. Two-device HiveMQ Cloud exchange and offline queued delivery.
-5. GitHub OTA happy path on hardware.
-6. Automatic bootloader rollback. The source SDK configuration enables it and the app has A/B partitions plus the ESP-IDF validation hook, but the destructive hardware test must still prove the exact prebuilt bootloader that PlatformIO flashes.
-
-Use `docs/HARDWARE_VALIDATION.md` for the intentionally short physical test sequence. Do not describe rollback as validated until its destructive test passes.
-
-## Physical two-device validation — 2026-08-15
+## Physical validation completed — 2026-08-15
 
 Validated on two LILYGO T-Display-S3 devices:
 
-- both devices boot successfully
-- captive setup portal works
-- unique setup AP names work
-- Wi-Fi configuration works
-- both devices connect to HiveMQ Cloud over MQTT
-- one device can create a FriendBox room
-- second device can join using the same room credentials
-- messages successfully send and receive between both devices
-- persistent local configuration survives reboot
+- firmware built, flashed, and booted;
+- the ST7789 display initialized correctly with `TFT_eSPI 2.5.43`;
+- DIO flash mode booted reliably;
+- the captive setup portal worked;
+- each unconfigured device exposed a unique setup AP using its full device ID;
+- settings persisted across reboot;
+- accent selection/configuration worked;
+- both devices authenticated to HiveMQ Cloud over TLS;
+- one device created a room and the other joined with the same credentials; and
+- messages were successfully exchanged between the two devices.
 
-Result: PASS
+Result: **PASS for the basic two-device messaging system.**
+
+On the current Windows development machine, normal esptool stub uploads repeatedly disconnected at a similar point. Entering ESP32-S3 ROM download mode and flashing with `esptool --no-stub` was reliable. This is tracked as a development-machine upload issue, not a FriendBox runtime failure.
+
+## Implemented but not fully validated
+
+These paths exist in code but still need explicit end-to-end proof:
+
+1. A complete GitHub OTA update from one tagged release to a newer tagged release.
+2. Automatic rollback after installing a deliberately unhealthy test image. A/B partitions, OTA metadata, and the app validation hook exist; the exact flashed bootloader behavior remains the deciding test.
+3. Extended offline/reconnect testing, including broker-queued QoS 1 delivery after a longer disconnection and duplicate-delivery behavior.
+4. The final external GPIO1 momentary button mounted in the finished enclosure.
+
+No numeric release tag exists yet. Do not describe OTA or rollback as physically validated, and do not create the first release merely to make the version look finished.
+
+Use [Physical validation checklist](HARDWARE_VALIDATION.md) for the remaining repeatable tests.
