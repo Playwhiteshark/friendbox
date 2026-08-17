@@ -9,10 +9,18 @@
 #include <cstring>
 #include "BuildConfig.h"
 #include "FriendBoxCore.h"
+#include "ProductInfo.h"
 #include "util/Hash.h"
 
 namespace friendbox::update {
 namespace {
+
+constexpr size_t kMaxManifestBytes = 4096;
+constexpr uint32_t kHealthyBootDelayMs = 5000;
+constexpr uint32_t kManifestTimeoutMs = 15000;
+constexpr uint32_t kFirmwareTimeoutMs = 20000;
+constexpr uint32_t kOtaTaskStackBytes = 12288;
+constexpr size_t kMinimumFirmwareBytes = 65536;
 
 struct ManifestContext {
     String body;
@@ -23,7 +31,7 @@ esp_err_t manifestEvent(esp_http_client_event_t* event) {
     auto* ctx = static_cast<ManifestContext*>(event->user_data);
     if (!ctx || event->event_id != HTTP_EVENT_ON_DATA) return ESP_OK;
     if (esp_http_client_get_status_code(event->client) != 200) return ESP_OK;
-    if (ctx->body.length() + static_cast<size_t>(event->data_len) > 4096) {
+    if (ctx->body.length() + static_cast<size_t>(event->data_len) > kMaxManifestBytes) {
         ctx->overflow = true;
         return ESP_FAIL;
     }
@@ -87,7 +95,7 @@ bool OtaUpdater::repoConfigured() const {
 }
 
 void OtaUpdater::validateBootIfHealthy(bool appHealthy) {
-    if (!_pendingBootValidation || !appHealthy || millis() - _bootAt < 5000) return;
+    if (!_pendingBootValidation || !appHealthy || millis() - _bootAt < kHealthyBootDelayMs) return;
     if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
         _pendingBootValidation = false;
     }
@@ -104,7 +112,7 @@ void OtaUpdater::update(bool networkReady, bool timeValid, bool appHealthy) {
 
     _lastCheckAt = now;
     _taskRunning.store(true, std::memory_order_relaxed);
-    if (xTaskCreate(taskEntry, "friendbox-ota", 12288, this, 1, nullptr) != pdPASS) {
+    if (xTaskCreate(taskEntry, "friendbox-ota", kOtaTaskStackBytes, this, 1, nullptr) != pdPASS) {
         _taskRunning.store(false, std::memory_order_relaxed);
         _state = OtaState::Failed;
     }
@@ -146,14 +154,14 @@ bool OtaUpdater::fetchManifest(String& version, String& url, String& sha256, siz
     ManifestContext context;
     esp_http_client_config_t cfg{};
     cfg.url = manifestUrl.c_str();
-    cfg.timeout_ms = 15000;
+    cfg.timeout_ms = kManifestTimeoutMs;
     cfg.crt_bundle_attach = arduino_esp_crt_bundle_attach;
     cfg.event_handler = manifestEvent;
     cfg.user_data = &context;
 
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (!client) return false;
-    esp_http_client_set_header(client, "User-Agent", "FriendBox/1");
+    esp_http_client_set_header(client, "User-Agent", product::kHttpUserAgent);
     const esp_err_t result = esp_http_client_perform(client);
     const int status = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
@@ -170,7 +178,7 @@ bool OtaUpdater::fetchManifest(String& version, String& url, String& sha256, siz
     const String expectedPrefix = "https://github.com/" + String(build::kGitHubRepository) + "/releases/download/";
     return core::compareVersions(version.c_str(), "0.0.0") >= 0 &&
            url.startsWith(expectedPrefix) && util::isSha256Hex(sha256) &&
-           size >= 65536;
+           size >= kMinimumFirmwareBytes;
 }
 
 bool OtaUpdater::installFirmware(const String& url, const String& expectedSha256, size_t expectedSize) {
@@ -191,7 +199,7 @@ bool OtaUpdater::installFirmware(const String& url, const String& expectedSha256
 
     esp_http_client_config_t cfg{};
     cfg.url = url.c_str();
-    cfg.timeout_ms = 20000;
+    cfg.timeout_ms = kFirmwareTimeoutMs;
     cfg.crt_bundle_attach = arduino_esp_crt_bundle_attach;
     cfg.event_handler = firmwareEvent;
     cfg.user_data = &context;
@@ -202,7 +210,7 @@ bool OtaUpdater::installFirmware(const String& url, const String& expectedSha256
         mbedtls_sha256_free(&context.sha);
         return false;
     }
-    esp_http_client_set_header(client, "User-Agent", "FriendBox/1");
+    esp_http_client_set_header(client, "User-Agent", product::kHttpUserAgent);
     const esp_err_t result = esp_http_client_perform(client);
     const int status = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);

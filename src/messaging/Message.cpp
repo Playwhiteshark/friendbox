@@ -4,11 +4,34 @@
 
 namespace friendbox::messaging {
 
+const char* messageTypeName(MessageType type) {
+    switch (type) {
+        case MessageType::Text: return "text";
+    }
+    return "";
+}
+
+bool parseMessageType(const String& value, MessageType& out) {
+    if (value == "text") {
+        out = MessageType::Text;
+        return true;
+    }
+    return false;
+}
+
 bool Message::valid() const {
     return version == 1 && id.length() > 0 && id.length() <= 64 &&
            senderId.length() > 0 && senderId.length() <= 32 &&
            sender.length() > 0 && sender.length() <= 24 &&
-           type == "text" && text.length() > 0 && text.length() <= build::kMaxTextBytes;
+           validPayload();
+}
+
+bool Message::validPayload() const {
+    switch (type) {
+        case MessageType::Text:
+            return text.length() > 0 && text.length() <= build::kMaxTextBytes;
+    }
+    return false;
 }
 
 String Message::toJson() const {
@@ -18,7 +41,7 @@ String Message::toJson() const {
     doc["sender_id"] = senderId;
     doc["sender"] = sender;
     doc["ts"] = timestamp;
-    doc["type"] = type;
+    doc["type"] = messageTypeName(type);
     doc["text"] = text;
     String output;
     serializeJson(doc, output);
@@ -37,7 +60,7 @@ bool Message::fromJson(const uint8_t* payload, size_t length, Message& out) {
     parsed.senderId = String(doc["sender_id"] | "");
     parsed.sender = String(doc["sender"] | "");
     parsed.timestamp = doc["ts"] | 0U;
-    parsed.type = String(doc["type"] | "");
+    if (!parseMessageType(String(doc["type"] | ""), parsed.type)) return false;
     parsed.text = String(doc["text"] | "");
     if (!parsed.valid()) return false;
     out = parsed;

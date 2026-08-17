@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "PresetCatalog.h"
 #include "config/DeviceConfig.h"
 #include "display/Display.h"
 #include "hardware/ButtonDriver.h"
@@ -32,19 +33,28 @@ private:
     setup::SetupPortal _setup;
     ui::Ui _ui;
     update::OtaUpdater _ota;
+    core::PresetCatalog _presets;
 
     bool _ready{false};
-    uint32_t _lastUiRefresh{0};
     String _lastWifiLabel;
     bool _lastMqttConnected{false};
     size_t _lastUnread{0};
     String _lastClock;
 
+    bool initializePersistentState();
+    bool initializeRuntimeServices();
     bool bootSetupRequested();
     bool ensureConfigured(bool forced);
-    void handleInput(core::ButtonAction action);
+    void updateServices();
+    void handleButtonRelease(const hardware::ButtonRelease& release);
+    void executeIntent(const ui::Intent& intent);
+    void sendPreset(size_t index);
+    void cycleAccent();
     void handleIncoming();
+    bool routeIncoming(const messaging::Message& message);
     void refreshUiIfNeeded();
+    void renderUi();
+    void showNotice(const String& title, const String& body, uint32_t durationMs = 2200);
     String selectedMessageTime() const;
 };
 

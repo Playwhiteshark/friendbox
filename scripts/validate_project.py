@@ -17,7 +17,10 @@ required = [
     "include/BuildConfig.h",
     "include/HiveMqRootCa.h",
     "src/display/Display.cpp",
+    "src/display/DisplayScreens.cpp",
     "src/messaging/MqttTransport.cpp",
+    "src/ui/UiRenderer.cpp",
+    "lib/FriendBoxCore/src/PresetCatalog.cpp",
     "src/update/OtaUpdater.cpp",
     ".github/workflows/build.yml",
     ".github/workflows/release.yml",
@@ -114,6 +117,16 @@ source_text = "\n".join(
 )
 assert "setInsecure(" not in source_text, "TLS verification was disabled"
 assert not re.search(r"\btry\s*\{", source_text), "embedded source unexpectedly uses C++ exceptions"
+
+# Preserve the feature-extension boundaries that keep future UI, Morse, pet,
+# and setup work out of transport and storage internals.
+assert "mutableSettings" not in source_text, "setup code must commit a SettingsDraft"
+messaging_service = (ROOT / "src/messaging/MessagingService.h").read_text(encoding="utf-8")
+assert "MessageStore" not in messaging_service, "transport/service must not own inbox persistence"
+app_source = (ROOT / "src/app/App.cpp").read_text(encoding="utf-8")
+assert "routeIncoming" in app_source, "incoming feature messages need an application routing boundary"
+ui_header = (ROOT / "src/ui/Ui.h").read_text(encoding="utf-8")
+assert "Intent handleAction" in ui_header, "UI navigation must emit intents rather than perform side effects"
 
 # Guard against accidentally committing common token formats.
 secret_patterns = {

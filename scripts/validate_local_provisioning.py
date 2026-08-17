@@ -25,14 +25,17 @@ assert 'mqttPort{service::kDefaultMqttTlsPort}' in config_h
 assert 'serviceSeededThisBoot()' in config_h
 assert 'kServiceInitializedKey = "svcinit"' in config_cpp
 assert 'bootstrapDefaultsAvailable()' in config_cpp
-assert 'hasMeaningfulStoredServiceSettings()' in config_cpp
-assert 'current.setupApName()' in portal
+assert 'hasMeaningfulStoredServiceSettings(' in config_cpp
+assert 'config.settings().setupApName()' in portal
 assert '_config.settings().setupApName()' in app
+assert 'SettingsDraft DeviceConfig::draft() const' in config_cpp
+assert 'bool DeviceConfig::apply(SettingsDraft draft, RoomAction roomAction)' in config_cpp
+assert 'mutableSettings' not in config_h
 
 # The saved secret must not be rendered back into the captive portal.
-assert 'WiFiManagerParameter pPass("mpass", "MQTT password", ""' in portal
-assert 'current.mqttPassword.c_str()' not in portal
-assert 'if (!submittedPassword.isEmpty()) current.mqttPassword = submittedPassword;' in portal
+assert '_password("mpass", "MQTT password", ""' in portal
+assert '_initial.mqttPassword.c_str()' not in portal
+assert 'if (!submittedPassword.isEmpty()) result.mqttPassword = submittedPassword;' in portal
 
 # No real private file should be distributed by this patch.
 assert not (ROOT / "include/LocalServiceConfig.h").exists(), \

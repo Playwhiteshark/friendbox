@@ -12,7 +12,7 @@ struct SetupResult {
 
 class SetupPortal {
 public:
-    SetupResult run(config::DeviceConfig& config, bool forced);
+    SetupResult run(config::DeviceConfig& config);
 };
 
 }  // namespace friendbox::setup
