@@ -47,7 +47,7 @@ On the current Windows development machine, normal esptool stub uploads repeated
 
 ## OTA validation attempt — 2026-08-18
 
-The `v0.1.0` release workflow passed and published a 1,095,584-byte firmware image plus a matching SHA-256 manifest. A configured device running `0.1.0-dev` had working Wi-Fi and network time but remained on the development version after reboot and the initial update window. Result: **FAIL, stage unknown** because that baseline firmware discarded the updater's failure reason. The follow-up diagnostic build reports the exact manifest/download/partition/hash stage on both the Info screen and serial before the next attempt.
+The `v0.1.0` release workflow passed and published a 1,095,584-byte firmware image plus a matching SHA-256 manifest. A configured device running `0.1.0-dev` had working Wi-Fi and network time but remained on the development version after reboot and the initial update window. A diagnostic USB build then reported `MANIFEST REQUEST`, ESP error `28674`, and `arduino_esp_crt_bundle_attach(): Failed to attach bundle`. Root cause: Arduino-ESP32 2.x exposes the certificate-bundle callback but does not provide bundle data until the application calls its setter. The follow-up fix embeds and initializes a reviewed public-root bundle; its physical OTA retest remains pending.
 
 ## Implemented but not fully validated
 
@@ -60,6 +60,6 @@ These paths exist in code but still need explicit end-to-end proof:
 5. Extended offline/reconnect testing, including broker-queued QoS 1 delivery after a longer disconnection and duplicate-delivery behavior.
 6. The final external GPIO1 momentary button mounted in the finished enclosure.
 
-No numeric release tag exists yet. Do not describe OTA or rollback as physically validated, and do not create the first release merely to make the version look finished.
+Release `v0.1.0` exists as the baseline test image. Do not describe OTA or rollback as physically validated until the remaining hardware checks pass.
 
 Use [Physical validation checklist](HARDWARE_VALIDATION.md) for the remaining repeatable tests.

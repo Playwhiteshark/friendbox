@@ -16,6 +16,7 @@ required = [
     "partitions.csv",
     "include/BuildConfig.h",
     "include/HiveMqRootCa.h",
+    "data/cert/x509_crt_bundle.bin",
     "src/display/Display.cpp",
     "src/display/DisplayScreens.cpp",
     "src/messaging/MqttTransport.cpp",
@@ -37,6 +38,7 @@ for expected in [
     "WiFiManager@2.0.17",
     "ArduinoJson@7.4.3",
     "espMqttClient@1.7.3",
+    "board_build.embed_files = data/cert/x509_crt_bundle.bin",
 ]:
     assert expected in pio, f"missing pinned build setting: {expected}"
 
@@ -108,6 +110,29 @@ with tempfile.NamedTemporaryFile("w", suffix=".pem") as f:
         check=True,
     ).stdout
     assert "CN = ISRG Root X1" in parsed or "CN=ISRG Root X1" in parsed
+
+# The Arduino-ESP32 TLS callback has no built-in CA data. FriendBox embeds a
+# generated public-root bundle and initializes that callback explicitly.
+ota_bundle = (ROOT / "data/cert/x509_crt_bundle.bin").read_bytes()
+assert len(ota_bundle) > 4096, "OTA CA bundle is unexpectedly small"
+certificate_count = int.from_bytes(ota_bundle[:2], "big")
+assert certificate_count >= 100, "OTA CA bundle contains too few public roots"
+assert b"DigiCert Global Root G2" in ota_bundle, "expected public root missing from OTA bundle"
+assert b"ISRG Root X1" in ota_bundle, "expected public root missing from OTA bundle"
+offset = 2
+for _ in range(certificate_count):
+    assert offset + 4 <= len(ota_bundle), "truncated OTA CA bundle header"
+    name_length = int.from_bytes(ota_bundle[offset:offset + 2], "big")
+    key_length = int.from_bytes(ota_bundle[offset + 2:offset + 4], "big")
+    assert name_length > 0 and key_length > 0, "empty OTA CA bundle entry"
+    offset += 4 + name_length + key_length
+    assert offset <= len(ota_bundle), "truncated OTA CA bundle entry"
+assert offset == len(ota_bundle), "trailing bytes in OTA CA bundle"
+
+ota_source = (ROOT / "src/update/OtaUpdater.cpp").read_text(encoding="utf-8")
+assert "arduino_esp_crt_bundle_set(kCertificateBundleStart)" in ota_source, (
+    "embedded OTA CA bundle is not initialized"
+)
 
 # Embedded code should not depend on C++ exceptions and TLS must never disable verification.
 source_text = "\n".join(
