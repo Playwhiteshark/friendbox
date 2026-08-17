@@ -45,7 +45,7 @@ git push origin v0.1.0
 6. generates `dist/manifest.json` with version, size, SHA-256, and release URL; and
 7. creates a GitHub Release containing both assets.
 
-The committed development header remains `0.1.0-dev`; the release workflow's generated value belongs to the tagged build. At the time of this documentation update, no release tag has been created. Freeze the intended first-release behavior and complete the OTA hardware checklist before tagging it.
+The committed development header remains `0.1.0-dev`; the release workflow's generated value belongs to the tagged build. Release `v0.1.0` is the baseline image used for the first physical OTA test.
 
 No GitHub token is stored on a FriendBox. The workflow uses GitHub's short-lived repository token to create the release.
 
@@ -57,7 +57,7 @@ After the initial boot delay, and then approximately every 12 hours, a configure
 https://github.com/<owner>/<repo>/releases/latest/download/manifest.json
 ```
 
-The request uses HTTPS certificate verification through the ESP certificate bundle. The device accepts a manifest only when:
+The request uses HTTPS certificate verification through the public-root bundle embedded from `data/cert/x509_crt_bundle.bin`. Arduino-ESP32 2.x does not populate its TLS callback automatically, so `OtaUpdater::begin()` installs the embedded bundle before any request. The device accepts a manifest only when:
 
 - `schema` is `1`;
 - `version` is strict numeric `MAJOR.MINOR.PATCH`;

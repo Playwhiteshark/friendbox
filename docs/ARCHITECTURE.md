@@ -257,7 +257,9 @@ Marking a message read rewrites only that slot. Changing rooms clears the namesp
 There are two separate HTTPS/TLS paths:
 
 - MQTT authenticates HiveMQ using the embedded public ISRG Root X1 certificate in `include/HiveMqRootCa.h`.
-- GitHub OTA HTTPS uses the ESP certificate bundle through `arduino_esp_crt_bundle_attach`.
+- GitHub OTA HTTPS uses the committed public-root bundle in `data/cert/`.
+  PlatformIO embeds it in the application and `OtaUpdater` initializes
+  `arduino_esp_crt_bundle_attach` before making a request.
 
 Neither path disables certificate verification. Broker username/password values live in NVS after setup and must never be committed to the public repository.
 

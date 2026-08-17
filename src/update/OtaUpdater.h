@@ -9,6 +9,7 @@ enum class OtaState : uint8_t { Idle, Checking, Downloading, Failed };
 
 enum class OtaError : uint8_t {
     None,
+    CertificateBundle,
     TaskStart,
     ManifestClient,
     ManifestRequest,
@@ -49,6 +50,7 @@ private:
     std::atomic<int> _httpStatus{0};
     std::atomic<int32_t> _espError{0};
     std::atomic_bool _taskRunning{false};
+    bool _certificateBundleReady{false};
     bool _pendingBootValidation{false};
     uint32_t _bootAt{0};
     uint32_t _lastCheckAt{0};
@@ -58,6 +60,7 @@ private:
     bool fetchManifest(String& version, String& url, String& sha256, size_t& size);
     bool installFirmware(const String& url, const String& expectedSha256, size_t expectedSize);
     bool repoConfigured() const;
+    bool embeddedCertificateBundleValid() const;
     void validateBootIfHealthy(bool appHealthy);
     void fail(OtaError error, int httpStatus = 0, int32_t espError = 0);
 };

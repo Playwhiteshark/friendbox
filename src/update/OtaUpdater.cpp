@@ -23,6 +23,11 @@ constexpr uint32_t kOtaTaskStackBytes = 12288;
 constexpr size_t kMinimumFirmwareBytes = 65536;
 constexpr int kMaxRedirects = 5;
 
+extern const uint8_t kCertificateBundleStart[]
+    asm("_binary_data_cert_x509_crt_bundle_bin_start");
+extern const uint8_t kCertificateBundleEnd[]
+    asm("_binary_data_cert_x509_crt_bundle_bin_end");
+
 struct ManifestContext {
     String body;
     bool overflow{false};
@@ -81,6 +86,7 @@ String digestToHex(const unsigned char digest[32]) {
 
 const char* errorName(OtaError error) {
     switch (error) {
+        case OtaError::CertificateBundle: return "CERTIFICATE BUNDLE";
         case OtaError::TaskStart: return "TASK START";
         case OtaError::ManifestClient: return "MANIFEST CLIENT";
         case OtaError::ManifestRequest: return "MANIFEST REQUEST";
@@ -113,11 +119,26 @@ const char* errorName(OtaError error) {
 
 void OtaUpdater::begin() {
     _bootAt = millis();
+    _certificateBundleReady = embeddedCertificateBundleValid();
+    if (_certificateBundleReady) {
+        arduino_esp_crt_bundle_set(kCertificateBundleStart);
+    } else {
+        fail(OtaError::CertificateBundle);
+    }
     const esp_partition_t* running = esp_ota_get_running_partition();
     esp_ota_img_states_t state{};
     _pendingBootValidation = running &&
                              esp_ota_get_state_partition(running, &state) == ESP_OK &&
                              state == ESP_OTA_IMG_PENDING_VERIFY;
+}
+
+bool OtaUpdater::embeddedCertificateBundleValid() const {
+    const size_t size = static_cast<size_t>(kCertificateBundleEnd - kCertificateBundleStart);
+    if (size < 3) return false;
+    const uint16_t certificateCount =
+        static_cast<uint16_t>(kCertificateBundleStart[0]) << 8 |
+        static_cast<uint16_t>(kCertificateBundleStart[1]);
+    return certificateCount > 0;
 }
 
 bool OtaUpdater::repoConfigured() const {
@@ -134,7 +155,8 @@ void OtaUpdater::validateBootIfHealthy(bool appHealthy) {
 
 void OtaUpdater::update(bool networkReady, bool timeValid, bool appHealthy) {
     validateBootIfHealthy(appHealthy);
-    if (!build::kOtaEnabled || !repoConfigured() || !networkReady || !timeValid || _taskRunning.load(std::memory_order_relaxed)) return;
+    if (!build::kOtaEnabled || !_certificateBundleReady || !repoConfigured() ||
+        !networkReady || !timeValid || _taskRunning.load(std::memory_order_relaxed)) return;
 
     const uint32_t now = millis();
     const bool first = _lastCheckAt == 0 && now >= build::kOtaFirstCheckDelayMs;
