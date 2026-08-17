@@ -264,13 +264,16 @@ void App::refreshUiIfNeeded() {
     const size_t unread = _store.unreadCount();
     const String clock = _time.clockText(_config.settings().utcOffsetMinutes);
     const String ota = _ota.stateLabel();
+    const String otaDetail = _ota.detailLabel();
     if (wifi != _lastWifiLabel || mqtt != _lastMqttConnected ||
-        unread != _lastUnread || clock != _lastClock || ota != _lastOtaLabel) {
+        unread != _lastUnread || clock != _lastClock || ota != _lastOtaLabel ||
+        otaDetail != _lastOtaDetail) {
         _lastWifiLabel = wifi;
         _lastMqttConnected = mqtt;
         _lastUnread = unread;
         _lastClock = clock;
         _lastOtaLabel = ota;
+        _lastOtaDetail = otaDetail;
         _ui.markDirty();
     }
 }
@@ -280,9 +283,11 @@ void App::renderUi() {
     const String wifi = _wifi.label();
     const String mqtt = _messaging.connected() ? "CONNECTED" : "CONNECTING";
     const String ota = _ota.stateLabel();
+    const String otaDetail = _ota.detailLabel();
     const String messageTime = selectedMessageTime();
     const ui::RenderContext context{
-        _config.settings(), _store, _presets, clock, wifi, mqtt, ota, messageTime,
+        _config.settings(), _store, _presets, clock, wifi, mqtt, ota, otaDetail,
+        messageTime,
         _messaging.connected(),
     };
     ui::render(_ui, _display, context);

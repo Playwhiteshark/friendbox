@@ -17,10 +17,11 @@ namespace {
 
 constexpr size_t kMaxManifestBytes = 4096;
 constexpr uint32_t kHealthyBootDelayMs = 5000;
-constexpr uint32_t kManifestTimeoutMs = 15000;
-constexpr uint32_t kFirmwareTimeoutMs = 20000;
+constexpr uint32_t kManifestTimeoutMs = 30000;
+constexpr uint32_t kFirmwareTimeoutMs = 60000;
 constexpr uint32_t kOtaTaskStackBytes = 12288;
 constexpr size_t kMinimumFirmwareBytes = 65536;
+constexpr int kMaxRedirects = 5;
 
 struct ManifestContext {
     String body;
@@ -78,6 +79,36 @@ String digestToHex(const unsigned char digest[32]) {
     return String(output);
 }
 
+const char* errorName(OtaError error) {
+    switch (error) {
+        case OtaError::TaskStart: return "TASK START";
+        case OtaError::ManifestClient: return "MANIFEST CLIENT";
+        case OtaError::ManifestRequest: return "MANIFEST REQUEST";
+        case OtaError::ManifestHttp: return "MANIFEST HTTP";
+        case OtaError::ManifestOverflow: return "MANIFEST TOO LARGE";
+        case OtaError::ManifestEmpty: return "MANIFEST EMPTY";
+        case OtaError::ManifestJson: return "MANIFEST JSON";
+        case OtaError::ManifestSchema: return "MANIFEST SCHEMA";
+        case OtaError::ManifestVersion: return "MANIFEST VERSION";
+        case OtaError::ManifestUrl: return "MANIFEST URL";
+        case OtaError::ManifestHash: return "MANIFEST HASH";
+        case OtaError::ManifestSize: return "MANIFEST SIZE";
+        case OtaError::NoUpdatePartition: return "NO UPDATE SLOT";
+        case OtaError::ImageTooLarge: return "IMAGE TOO LARGE";
+        case OtaError::ShaStart: return "SHA START";
+        case OtaError::OtaBegin: return "OTA BEGIN";
+        case OtaError::FirmwareClient: return "FIRMWARE CLIENT";
+        case OtaError::FirmwareRequest: return "FIRMWARE REQUEST";
+        case OtaError::FirmwareHttp: return "FIRMWARE HTTP";
+        case OtaError::FirmwareStream: return "FIRMWARE STREAM";
+        case OtaError::FirmwareSize: return "FIRMWARE SIZE";
+        case OtaError::FirmwareHash: return "FIRMWARE HASH";
+        case OtaError::OtaFinalize: return "OTA FINALIZE";
+        case OtaError::BootPartition: return "BOOT PARTITION";
+        default: return "";
+    }
+}
+
 }  // namespace
 
 void OtaUpdater::begin() {
@@ -114,7 +145,7 @@ void OtaUpdater::update(bool networkReady, bool timeValid, bool appHealthy) {
     _taskRunning.store(true, std::memory_order_relaxed);
     if (xTaskCreate(taskEntry, "friendbox-ota", kOtaTaskStackBytes, this, 1, nullptr) != pdPASS) {
         _taskRunning.store(false, std::memory_order_relaxed);
-        _state = OtaState::Failed;
+        fail(OtaError::TaskStart);
     }
 }
 
@@ -126,26 +157,40 @@ void OtaUpdater::taskEntry(void* arg) {
 }
 
 void OtaUpdater::runCheck() {
+    _error = OtaError::None;
+    _httpStatus = 0;
+    _espError = 0;
     _state = OtaState::Checking;
+    Serial.printf("[OTA] Checking for an update; version=%s free_heap=%u\n",
+                  FRIEND_BOX_VERSION, static_cast<unsigned>(ESP.getFreeHeap()));
     String version, url, sha;
     size_t size = 0;
-    if (!fetchManifest(version, url, sha, size)) {
-        _state = OtaState::Failed;
-        return;
-    }
+    if (!fetchManifest(version, url, sha, size)) return;
     if (!core::isNewerVersion(version.c_str(), FRIEND_BOX_VERSION)) {
+        Serial.printf("[OTA] Current version is up to date; latest=%s\n", version.c_str());
         _state = OtaState::Idle;
         return;
     }
 
     _state = OtaState::Downloading;
-    if (!installFirmware(url, sha, size)) {
-        _state = OtaState::Failed;
-        return;
-    }
+    Serial.printf("[OTA] Downloading version=%s size=%u free_heap=%u\n", version.c_str(),
+                  static_cast<unsigned>(size), static_cast<unsigned>(ESP.getFreeHeap()));
+    if (!installFirmware(url, sha, size)) return;
 
+    Serial.println("[OTA] Install complete; restarting");
+    Serial.flush();
     delay(100);
     esp_restart();
+}
+
+void OtaUpdater::fail(OtaError error, int httpStatus, int32_t espError) {
+    _error = error;
+    _httpStatus = httpStatus;
+    _espError = espError;
+    _state = OtaState::Failed;
+    Serial.printf("[OTA] FAILED stage=%s http=%d esp=%ld free_heap=%u\n",
+                  errorName(error), httpStatus, static_cast<long>(espError),
+                  static_cast<unsigned>(ESP.getFreeHeap()));
 }
 
 bool OtaUpdater::fetchManifest(String& version, String& url, String& sha256, size_t& size) {
@@ -155,51 +200,102 @@ bool OtaUpdater::fetchManifest(String& version, String& url, String& sha256, siz
     esp_http_client_config_t cfg{};
     cfg.url = manifestUrl.c_str();
     cfg.timeout_ms = kManifestTimeoutMs;
+    cfg.max_redirection_count = kMaxRedirects;
     cfg.crt_bundle_attach = arduino_esp_crt_bundle_attach;
     cfg.event_handler = manifestEvent;
     cfg.user_data = &context;
 
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
-    if (!client) return false;
+    if (!client) {
+        fail(OtaError::ManifestClient);
+        return false;
+    }
     esp_http_client_set_header(client, "User-Agent", product::kHttpUserAgent);
+    esp_http_client_set_header(client, "Accept", "application/octet-stream");
     const esp_err_t result = esp_http_client_perform(client);
     const int status = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
-    if (result != ESP_OK || status != 200 || context.overflow || context.body.isEmpty()) return false;
+    if (result != ESP_OK) {
+        fail(OtaError::ManifestRequest, status, result);
+        return false;
+    }
+    if (status != 200) {
+        fail(OtaError::ManifestHttp, status);
+        return false;
+    }
+    if (context.overflow) {
+        fail(OtaError::ManifestOverflow, status);
+        return false;
+    }
+    if (context.body.isEmpty()) {
+        fail(OtaError::ManifestEmpty, status);
+        return false;
+    }
 
     JsonDocument doc;
-    if (deserializeJson(doc, context.body)) return false;
-    if ((doc["schema"] | 0) != 1) return false;
+    if (deserializeJson(doc, context.body)) {
+        fail(OtaError::ManifestJson, status);
+        return false;
+    }
+    if ((doc["schema"] | 0) != 1) {
+        fail(OtaError::ManifestSchema, status);
+        return false;
+    }
     version = String(doc["version"] | "");
     url = String(doc["url"] | "");
     sha256 = String(doc["sha256"] | "");
     size = doc["size"] | 0U;
 
     const String expectedPrefix = "https://github.com/" + String(build::kGitHubRepository) + "/releases/download/";
-    return core::compareVersions(version.c_str(), "0.0.0") >= 0 &&
-           url.startsWith(expectedPrefix) && util::isSha256Hex(sha256) &&
-           size >= kMinimumFirmwareBytes;
+    if (core::compareVersions(version.c_str(), "0.0.0") < 0) {
+        fail(OtaError::ManifestVersion, status);
+        return false;
+    }
+    if (!url.startsWith(expectedPrefix)) {
+        fail(OtaError::ManifestUrl, status);
+        return false;
+    }
+    if (!util::isSha256Hex(sha256)) {
+        fail(OtaError::ManifestHash, status);
+        return false;
+    }
+    if (size < kMinimumFirmwareBytes) {
+        fail(OtaError::ManifestSize, status);
+        return false;
+    }
+    return true;
 }
 
 bool OtaUpdater::installFirmware(const String& url, const String& expectedSha256, size_t expectedSize) {
     const esp_partition_t* target = esp_ota_get_next_update_partition(nullptr);
-    if (!target || expectedSize == 0 || expectedSize > target->size) return false;
+    if (!target) {
+        fail(OtaError::NoUpdatePartition);
+        return false;
+    }
+    if (expectedSize == 0 || expectedSize > target->size) {
+        fail(OtaError::ImageTooLarge);
+        return false;
+    }
 
     FirmwareContext context;
     context.limit = expectedSize;
     mbedtls_sha256_init(&context.sha);
     if (mbedtls_sha256_starts_ret(&context.sha, 0) != 0) {
         mbedtls_sha256_free(&context.sha);
+        fail(OtaError::ShaStart);
         return false;
     }
-    if (esp_ota_begin(target, expectedSize, &context.handle) != ESP_OK) {
+    const esp_err_t beginResult = esp_ota_begin(target, expectedSize, &context.handle);
+    if (beginResult != ESP_OK) {
         mbedtls_sha256_free(&context.sha);
+        fail(OtaError::OtaBegin, 0, beginResult);
         return false;
     }
 
     esp_http_client_config_t cfg{};
     cfg.url = url.c_str();
     cfg.timeout_ms = kFirmwareTimeoutMs;
+    cfg.max_redirection_count = kMaxRedirects;
     cfg.crt_bundle_attach = arduino_esp_crt_bundle_attach;
     cfg.event_handler = firmwareEvent;
     cfg.user_data = &context;
@@ -208,9 +304,11 @@ bool OtaUpdater::installFirmware(const String& url, const String& expectedSha256
     if (!client) {
         esp_ota_abort(context.handle);
         mbedtls_sha256_free(&context.sha);
+        fail(OtaError::FirmwareClient);
         return false;
     }
     esp_http_client_set_header(client, "User-Agent", product::kHttpUserAgent);
+    esp_http_client_set_header(client, "Accept", "application/octet-stream");
     const esp_err_t result = esp_http_client_perform(client);
     const int status = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
@@ -220,15 +318,43 @@ bool OtaUpdater::installFirmware(const String& url, const String& expectedSha256
     mbedtls_sha256_free(&context.sha);
     const String actualSha = digestToHex(digest);
 
-    if (result != ESP_OK || status != 200 || context.failed ||
-        context.bytes != expectedSize || !shaFinished ||
-        !actualSha.equalsIgnoreCase(expectedSha256)) {
+    if (result != ESP_OK) {
         esp_ota_abort(context.handle);
+        fail(OtaError::FirmwareRequest, status, result);
+        return false;
+    }
+    if (status != 200) {
+        esp_ota_abort(context.handle);
+        fail(OtaError::FirmwareHttp, status);
+        return false;
+    }
+    if (context.failed) {
+        esp_ota_abort(context.handle);
+        fail(OtaError::FirmwareStream, status);
+        return false;
+    }
+    if (context.bytes != expectedSize) {
+        esp_ota_abort(context.handle);
+        fail(OtaError::FirmwareSize, status);
+        return false;
+    }
+    if (!shaFinished || !actualSha.equalsIgnoreCase(expectedSha256)) {
+        esp_ota_abort(context.handle);
+        fail(OtaError::FirmwareHash, status);
         return false;
     }
 
-    if (esp_ota_end(context.handle) != ESP_OK) return false;
-    return esp_ota_set_boot_partition(target) == ESP_OK;
+    const esp_err_t endResult = esp_ota_end(context.handle);
+    if (endResult != ESP_OK) {
+        fail(OtaError::OtaFinalize, status, endResult);
+        return false;
+    }
+    const esp_err_t bootResult = esp_ota_set_boot_partition(target);
+    if (bootResult != ESP_OK) {
+        fail(OtaError::BootPartition, status, bootResult);
+        return false;
+    }
+    return true;
 }
 
 String OtaUpdater::stateLabel() const {
@@ -238,6 +364,23 @@ String OtaUpdater::stateLabel() const {
         case OtaState::Failed: return "UPDATE FAILED";
         default: return "IDLE";
     }
+}
+
+String OtaUpdater::detailLabel() const {
+    const OtaError error = _error.load(std::memory_order_relaxed);
+    if (error == OtaError::None) return "";
+    String detail(errorName(error));
+    const int httpStatus = _httpStatus.load(std::memory_order_relaxed);
+    const int32_t espError = _espError.load(std::memory_order_relaxed);
+    if (httpStatus != 0) {
+        detail += " HTTP ";
+        detail += String(httpStatus);
+    }
+    if (espError != 0) {
+        detail += " ERR ";
+        detail += String(static_cast<long>(espError));
+    }
+    return detail;
 }
 
 }  // namespace friendbox::update

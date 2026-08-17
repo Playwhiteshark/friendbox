@@ -45,6 +45,10 @@ Result: **PASS for the basic two-device messaging system.**
 
 On the current Windows development machine, normal esptool stub uploads repeatedly disconnected at a similar point. Entering ESP32-S3 ROM download mode and flashing with `esptool --no-stub` was reliable. This is tracked as a development-machine upload issue, not a FriendBox runtime failure.
 
+## OTA validation attempt — 2026-08-18
+
+The `v0.1.0` release workflow passed and published a 1,095,584-byte firmware image plus a matching SHA-256 manifest. A configured device running `0.1.0-dev` had working Wi-Fi and network time but remained on the development version after reboot and the initial update window. Result: **FAIL, stage unknown** because that baseline firmware discarded the updater's failure reason. The follow-up diagnostic build reports the exact manifest/download/partition/hash stage on both the Info screen and serial before the next attempt.
+
 ## Implemented but not fully validated
 
 These paths exist in code but still need explicit end-to-end proof:

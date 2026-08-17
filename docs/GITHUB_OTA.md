@@ -66,7 +66,7 @@ The request uses HTTPS certificate verification through the ESP certificate bund
 - `sha256` is 64 hexadecimal characters; and
 - the declared size is plausible and fits the inactive OTA partition.
 
-The fourth Info page reports the current updater state as `IDLE`, `CHECKING`, `UPDATING`, or `UPDATE FAILED`. It is diagnostic status only; updates remain automatic.
+The fourth Info page reports the current updater state as `IDLE`, `CHECKING`, `UPDATING`, or `UPDATE FAILED`. A failed check also shows the exact stage plus any HTTP/ESP error code, and the same detail is written to serial with the available heap. It is diagnostic status only; updates remain automatic.
 
 ## Installation
 

@@ -61,6 +61,7 @@ Current status: implemented, not yet physically validated end to end.
 - Publish a newer numeric release tag.
 - Confirm the device fetches the latest manifest, downloads into the inactive slot, verifies size/hash/image, reboots, and reports the new version.
 - Watch the fourth Info page for `CHECKING`, `UPDATING`, or `UPDATE FAILED` while diagnosing the run.
+- If it fails, record the stage and HTTP/ESP code shown below `UPDATE FAILED`; rebooting schedules a fresh check after the startup delay.
 - Confirm configuration and inbox data in NVS survive the update.
 - Confirm an unchanged or older version is ignored.
 - Confirm a deliberately bad manifest hash fails without changing the boot partition.

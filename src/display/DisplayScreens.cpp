@@ -123,8 +123,8 @@ void Display::composer(const String& heading, const std::string& text, const std
 
 void Display::info(size_t page, const String& name, const String& groupCode,
                    const String& groupPassword, const String& wifi, const String& mqtt,
-                   const String& ota, const String& accentName, const String& version,
-                   uint32_t accentRgb) {
+                   const String& ota, const String& otaDetail, const String& accentName,
+                   const String& version, uint32_t accentRgb) {
     clear();
     const uint16_t a = accentColor(accentRgb);
     title("INFO", a);
@@ -153,12 +153,16 @@ void Display::info(size_t page, const String& name, const String& groupCode,
         _gfx.setCursor(12, 126); _gfx.print("Change from phone setup");
     } else {
         _gfx.setCursor(12, 48); _gfx.print("Software update");
-        _gfx.setTextSize(3);
+        _gfx.setTextSize(2);
         _gfx.setTextColor(a);
         _gfx.setCursor(12, 82); _gfx.print(ota);
         _gfx.setTextSize(1);
         _gfx.setTextColor(TFT_WHITE);
-        _gfx.setCursor(12, 126); _gfx.print("Checks after startup, then every 12h");
+        if (otaDetail.isEmpty()) {
+            _gfx.setCursor(12, 114); _gfx.print("Checks after startup, then every 12h");
+        } else {
+            wrapped(otaDetail, 12, 110, 296, 1, TFT_WHITE, 2);
+        }
     }
     footer("tap page   long back");
 }

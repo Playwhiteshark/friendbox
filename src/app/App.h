@@ -41,6 +41,7 @@ private:
     size_t _lastUnread{0};
     String _lastClock;
     String _lastOtaLabel;
+    String _lastOtaDetail;
     bool _screenAwake{true};
     uint32_t _lastInteractionAt{0};
 

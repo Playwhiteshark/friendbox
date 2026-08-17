@@ -24,8 +24,9 @@ public:
     void composer(const String& heading, const std::string& text, const std::string& code,
                   char preview, bool invalid, bool full, uint32_t accentRgb);
     void info(size_t page, const String& name, const String& groupCode, const String& groupPassword,
-              const String& wifi, const String& mqtt, const String& ota, const String& accentName,
-              const String& version, uint32_t accentRgb);
+              const String& wifi, const String& mqtt, const String& ota,
+              const String& otaDetail, const String& accentName, const String& version,
+              uint32_t accentRgb);
     void notification(const String& title, const String& body, uint32_t accentRgb);
     void setupMode(const String& apName);
     void fatal(const String& message);
