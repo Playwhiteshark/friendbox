@@ -4,7 +4,6 @@
 
 namespace friendbox::display {
 namespace {
-constexpr Area kFullWidth{0, 0, 320, 170};
 constexpr Area kMenuBody{16, 38, 294, 105};
 }
 
