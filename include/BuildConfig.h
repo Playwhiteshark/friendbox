@@ -18,6 +18,7 @@ constexpr uint32_t kBootFactoryResetHoldMs = 10000;
 
 constexpr size_t kMaxStoredMessages = 50;
 constexpr size_t kMaxTextBytes = 256;
+constexpr size_t kMaxRoomNameChars = 18;
 constexpr size_t kMaxMqttPayloadBytes = 768;
 constexpr size_t kMqttRxQueueDepth = 16;
 
