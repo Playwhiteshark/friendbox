@@ -33,21 +33,24 @@ bool MessagingService::publishRoomMetadata() {
     }
     JsonDocument doc;
     doc["v"] = 1;
+    doc["type"] = "room_meta";
     doc["name"] = _config->settings().roomName;
     doc["owner_id"] = _config->settings().roomOwnerId;
     String payload;
     serializeJson(doc, payload);
-    return _transport.publishRoomMetadata(payload);
+    return _transport.publishRetained(payload);
 }
 
-void MessagingService::handleRoomMetadata(const String& payload) {
-    if (!_config || payload.isEmpty() || payload.length() > build::kMaxMqttPayloadBytes) return;
+bool MessagingService::handleRoomMetadata(const String& payload) {
+    if (!_config || payload.isEmpty() || payload.length() > build::kMaxMqttPayloadBytes) return false;
     JsonDocument doc;
-    if (deserializeJson(doc, payload)) return;
-    if ((doc["v"] | 0) != 1) return;
+    if (deserializeJson(doc, payload)) return false;
+    if (String(doc["type"] | "") != "room_meta") return false;
+    if ((doc["v"] | 0) != 1) return true;
     const String name(doc["name"] | "");
     const String ownerId(doc["owner_id"] | "");
     if (_config->applyRoomMetadata(name, ownerId)) _roomMetadataChanged = true;
+    return true;
 }
 
 bool MessagingService::sendText(const String& text, uint32_t timestamp) {
@@ -65,12 +68,8 @@ bool MessagingService::sendText(const String& text, uint32_t timestamp) {
 bool MessagingService::pollIncoming(Message& message) {
     if (!_config) return false;
     String payload;
-    PayloadKind kind = PayloadKind::Message;
-    while (_transport.pollPayload(payload, kind)) {
-        if (kind == PayloadKind::RoomMetadata) {
-            handleRoomMetadata(payload);
-            continue;
-        }
+    while (_transport.pollPayload(payload)) {
+        if (handleRoomMetadata(payload)) continue;
         Message parsed;
         if (!Message::fromJson(reinterpret_cast<const uint8_t*>(payload.c_str()), payload.length(), parsed)) continue;
         if (parsed.senderId == _config->settings().deviceId) continue;
