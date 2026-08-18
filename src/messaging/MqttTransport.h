@@ -10,8 +10,6 @@
 
 namespace friendbox::messaging {
 
-enum class PayloadKind : uint8_t { Message, RoomMetadata };
-
 class MqttTransport {
 public:
     MqttTransport();
@@ -19,21 +17,14 @@ public:
     void update(bool wifiConnected);
     bool connected() const { return _connected.load(std::memory_order_relaxed); }
     bool publish(const String& payload);
-    bool publishRoomMetadata(const String& payload);
-    bool pollPayload(String& payload, PayloadKind& kind);
+    bool publishRetained(const String& payload);
+    bool pollPayload(String& payload);
     void disconnect();
 
 private:
     struct Packet {
-        PayloadKind kind{PayloadKind::Message};
         uint16_t length{0};
         char payload[build::kMaxMqttPayloadBytes + 1]{};
-    };
-
-    struct Assembly {
-        char data[build::kMaxMqttPayloadBytes + 1]{};
-        size_t total{0};
-        size_t received{0};
     };
 
     espMqttClientSecure _client;
@@ -48,19 +39,17 @@ private:
     String _username;
     String _password;
     String _clientId;
-    String _messageTopic;
-    String _metadataTopic;
+    String _topic;
 
-    Assembly _messageAssembly;
-    Assembly _metadataAssembly;
+    char _assembly[build::kMaxMqttPayloadBytes + 1]{};
+    size_t _assemblyTotal{0};
+    size_t _assemblyReceived{0};
 
     void onConnect(bool sessionPresent);
     void onDisconnect(espMqttClientTypes::DisconnectReason reason);
     void onMessage(const espMqttClientTypes::MessageProperties& properties,
                    const char* topic, const uint8_t* payload,
                    size_t len, size_t index, size_t total);
-    void assemble(PayloadKind kind, Assembly& assembly, const uint8_t* payload,
-                  size_t len, size_t index, size_t total);
 };
 
 }  // namespace friendbox::messaging
