@@ -89,6 +89,12 @@ void Display::drawClock(const Area& area, const String& timeText, uint8_t size, 
     if (!timeText.isEmpty()) centered(area, timeText, size, color);
 }
 
+void Display::drawPageIndicator(const Area& area, size_t position, size_t count, uint16_t color) {
+    if (count == 0) return;
+    const size_t shownPosition = position < count ? position : count - 1;
+    drawText(area, String(shownPosition + 1) + "/" + String(count), 1, color);
+}
+
 void Display::drawMenuList(const Area& area, const std::string* items, size_t count,
                            size_t selected, uint16_t accent) {
     constexpr int16_t kRowHeight = 21;
@@ -116,6 +122,14 @@ void Display::drawMenuList(const Area& area, const std::string* items, size_t co
         }
         _gfx.print(i == selected ? "> " : "  ");
         _gfx.print(label);
+    }
+
+    if (start + visible < count) {
+        constexpr int16_t kHintWidth = 36;
+        const int16_t hintX = area.x + area.width - kHintWidth;
+        const int16_t hintY = area.y + static_cast<int16_t>(visible) * kRowHeight - 3;
+        drawText({hintX, hintY, kHintWidth, 8}, "more v", 1,
+                 _gfx.color565(150, 150, 150));
     }
 }
 
