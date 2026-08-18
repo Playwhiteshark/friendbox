@@ -34,8 +34,9 @@ public:
 private:
     TFT_eSPI _gfx;
 
-    void title(const String& text, uint16_t accent);
+    void title(const String& text, uint16_t accent, size_t position = 0, size_t count = 0);
     void footer(const String& text);
+    void moreBelow(bool visible);
     void centered(const String& text, int16_t y, uint8_t size, uint16_t color);
     void wrapped(const String& text, int16_t x, int16_t y, int16_t maxWidth, uint8_t size, uint16_t color, uint8_t maxLines = 3);
 };
