@@ -34,11 +34,7 @@ void Display::inbox(const String& sender, const String& text, const String& when
                     size_t position, size_t count, bool unread, uint32_t accentRgb) {
     clear();
     const uint16_t a = accentColor(accentRgb);
-    title("INBOX", a);
-    _gfx.setTextSize(1);
-    _gfx.setTextColor(_gfx.color565(155, 155, 155));
-    _gfx.setCursor(270, 10);
-    _gfx.printf("%u/%u", static_cast<unsigned>(position + 1), static_cast<unsigned>(count));
+    title("INBOX", a, position, count);
     _gfx.setTextSize(2);
     _gfx.setTextColor(unread ? a : TFT_WHITE);
     _gfx.setCursor(10, 42);
@@ -69,6 +65,7 @@ void Display::sendMenu(const std::string* items, size_t count, size_t selected,
         if (label.length() > 22) label = label.substring(0, 19) + "...";
         _gfx.print(label);
     }
+    moreBelow(start + visible < count);
     if (!connected) {
         _gfx.setTextSize(1);
         _gfx.setTextColor(_gfx.color565(190, 190, 190));
@@ -95,6 +92,7 @@ void Display::selectionMenu(const String& heading, const std::string* items, siz
         _gfx.print(i == selected ? "> " : "  ");
         _gfx.print(label);
     }
+    moreBelow(start + visible < count);
     footer(help);
 }
 
@@ -127,7 +125,7 @@ void Display::info(size_t page, const String& name, const String& groupCode,
                    const String& version, uint32_t accentRgb) {
     clear();
     const uint16_t a = accentColor(accentRgb);
-    title("INFO", a);
+    title("INFO", a, page % 4, 4);
     _gfx.setTextSize(2);
     _gfx.setTextColor(TFT_WHITE);
     if (page % 4 == 0) {
