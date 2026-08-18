@@ -7,6 +7,18 @@
 
 namespace friendbox::display {
 
+struct Area {
+    int16_t x{0};
+    int16_t y{0};
+    int16_t width{0};
+    int16_t height{0};
+};
+
+struct DetailRow {
+    String label;
+    String value;
+};
+
 class Display {
 public:
     bool begin();
@@ -36,8 +48,15 @@ private:
 
     void title(const String& text, uint16_t accent);
     void footer(const String& text);
-    void centered(const String& text, int16_t y, uint8_t size, uint16_t color);
-    void wrapped(const String& text, int16_t x, int16_t y, int16_t maxWidth, uint8_t size, uint16_t color, uint8_t maxLines = 3);
+    void drawText(const Area& area, const String& text, uint8_t size, uint16_t color);
+    void centered(const Area& area, const String& text, uint8_t size, uint16_t color);
+    void wrapped(const Area& area, const String& text, uint8_t size, uint16_t color,
+                 uint8_t maxLines = 3);
+    void drawClock(const Area& area, const String& timeText, uint8_t size, uint16_t color);
+    void drawMenuList(const Area& area, const std::string* items, size_t count,
+                      size_t selected, uint16_t accent);
+    void drawDetailList(const Area& area, const DetailRow* rows, size_t count,
+                        uint8_t size, uint16_t color, int16_t rowHeight = 17);
 };
 
 }  // namespace friendbox::display
