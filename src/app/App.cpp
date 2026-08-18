@@ -300,15 +300,17 @@ void App::refreshUiIfNeeded() {
     const bool mqtt = _messaging.connected();
     const size_t unread = _store.unreadCount();
     const String clock = _time.clockText(_config.settings().utcOffsetMinutes);
+    const String roomName = _config.settings().roomName;
     const String ota = _ota.stateLabel();
     const String otaDetail = _ota.detailLabel();
     if (wifi != _lastWifiLabel || mqtt != _lastMqttConnected ||
-        unread != _lastUnread || clock != _lastClock || ota != _lastOtaLabel ||
-        otaDetail != _lastOtaDetail) {
+        unread != _lastUnread || clock != _lastClock || roomName != _lastRoomName ||
+        ota != _lastOtaLabel || otaDetail != _lastOtaDetail) {
         _lastWifiLabel = wifi;
         _lastMqttConnected = mqtt;
         _lastUnread = unread;
         _lastClock = clock;
+        _lastRoomName = roomName;
         _lastOtaLabel = ota;
         _lastOtaDetail = otaDetail;
         _ui.markDirty();
