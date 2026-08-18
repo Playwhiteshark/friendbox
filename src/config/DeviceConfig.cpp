@@ -1,6 +1,7 @@
 #include "DeviceConfig.h"
 
 #include <esp_system.h>
+#include "BuildConfig.h"
 #include "ServiceConfig.h"
 #include "util/Hash.h"
 
@@ -18,6 +19,8 @@ constexpr const char* kNameKey = "name";
 constexpr const char* kGroupKey = "group";
 constexpr const char* kGroupPasswordKey = "gpass";
 constexpr const char* kRoomTokenKey = "room";
+constexpr const char* kRoomNameKey = "rname";
+constexpr const char* kRoomOwnerKey = "rowner";
 constexpr const char* kMqttHostKey = "mhost";
 constexpr const char* kMqttPortKey = "mport";
 constexpr const char* kMqttUserKey = "muser";
@@ -57,6 +60,8 @@ void DeviceConfig::loadSettings() {
     _settings.groupCode = _prefs.getString(kGroupKey, "");
     _settings.groupPassword = _prefs.getString(kGroupPasswordKey, "");
     _settings.roomToken = _prefs.getString(kRoomTokenKey, "");
+    _settings.roomName = _prefs.getString(kRoomNameKey, "");
+    _settings.roomOwnerId = _prefs.getString(kRoomOwnerKey, "");
     _settings.mqttHost = _prefs.getString(kMqttHostKey, "");
     _settings.mqttPort = _prefs.getUShort(kMqttPortKey, service::kDefaultMqttTlsPort);
     _settings.mqttUsername = _prefs.getString(kMqttUserKey, "");
@@ -104,6 +109,8 @@ bool DeviceConfig::normalizeStoredRoom() {
             _prefs.putString(kRoomTokenKey, _settings.roomToken) == 0) return false;
     } else {
         _settings.roomToken = "";
+        _settings.roomName = "";
+        _settings.roomOwnerId = "";
     }
     return true;
 }
@@ -169,6 +176,7 @@ SettingsDraft DeviceConfig::draft() const {
     result.displayName = _settings.displayName;
     result.groupCode = _settings.groupCode;
     result.groupPassword = _settings.groupPassword;
+    result.roomName = _settings.roomName;
     result.mqttHost = _settings.mqttHost;
     result.mqttPort = _settings.mqttPort;
     result.mqttUsername = _settings.mqttUsername;
@@ -185,6 +193,23 @@ SettingsDraft DeviceConfig::draft() const {
     return result;
 }
 
+bool DeviceConfig::applyRoomMetadata(const String& roomName, const String& ownerId) {
+    String name = roomName;
+    String owner = ownerId;
+    name.trim();
+    owner.trim();
+    if (name.isEmpty() || name.length() > build::kMaxRoomNameChars ||
+        owner.isEmpty() || owner.length() > 32) return false;
+    if (!_settings.roomOwnerId.isEmpty() && _settings.roomOwnerId != owner) return false;
+    if (_settings.roomName == name && _settings.roomOwnerId == owner) return false;
+
+    if (_prefs.putString(kRoomOwnerKey, owner) == 0 ||
+        _prefs.putString(kRoomNameKey, name) == 0) return false;
+    _settings.roomOwnerId = owner;
+    _settings.roomName = name;
+    return true;
+}
+
 bool DeviceConfig::resetUserStatePreservingService() {
     const String deviceId = _settings.deviceId;
     const String mqttHost = _settings.mqttHost;
@@ -193,7 +218,7 @@ bool DeviceConfig::resetUserStatePreservingService() {
     const String mqttPassword = _settings.mqttPassword;
 
     const char* userKeys[] = {
-        kNameKey, kGroupKey, kGroupPasswordKey, kRoomTokenKey,
+        kNameKey, kGroupKey, kGroupPasswordKey, kRoomTokenKey, kRoomNameKey, kRoomOwnerKey,
         kTimezoneKey, kAccentKey, kCustomColor1Key, kCustomColor2Key,
         kBrightnessKey, kScreenTimeoutKey, kClockVisibleKey,
         kMorseDashKey, kMorseLetterKey, kMorseWordKey, kMorseControlKey,
@@ -227,6 +252,8 @@ bool DeviceConfig::saveSettings(const Settings& settings) {
     ok &= _prefs.putString(kGroupKey, settings.groupCode) > 0 || settings.groupCode.isEmpty();
     ok &= _prefs.putString(kGroupPasswordKey, settings.groupPassword) > 0 || settings.groupPassword.isEmpty();
     ok &= _prefs.putString(kRoomTokenKey, settings.roomToken) > 0 || settings.roomToken.isEmpty();
+    ok &= _prefs.putString(kRoomNameKey, settings.roomName) > 0 || settings.roomName.isEmpty();
+    ok &= _prefs.putString(kRoomOwnerKey, settings.roomOwnerId) > 0 || settings.roomOwnerId.isEmpty();
     ok &= saveServiceSettings(settings);
     ok &= _prefs.putShort(kTimezoneKey, settings.utcOffsetMinutes) > 0;
     ok &= _prefs.putUChar(kAccentKey, static_cast<uint8_t>(settings.accent)) > 0;
@@ -277,6 +304,10 @@ bool DeviceConfig::apply(SettingsDraft draft, RoomAction roomAction) {
     draft.groupCode.trim();
     draft.groupCode.toUpperCase();
     draft.groupPassword.trim();
+    draft.roomName.trim();
+    if (draft.roomName.length() > build::kMaxRoomNameChars) {
+        draft.roomName.remove(build::kMaxRoomNameChars);
+    }
     draft.mqttHost.trim();
     draft.mqttUsername.trim();
 
@@ -317,11 +348,21 @@ bool DeviceConfig::apply(SettingsDraft draft, RoomAction roomAction) {
 
     if (roomAction == RoomAction::Create) {
         createRoomCredentials(candidate);
+        candidate.roomName = draft.roomName.isEmpty() ? String(product::kDisplayTitle) : draft.roomName;
+        candidate.roomOwnerId = candidate.deviceId;
     } else if (roomAction == RoomAction::Join) {
         if (!core::validGroupCode(draft.groupCode.c_str()) ||
             !core::validGroupPassword(draft.groupPassword.c_str())) return false;
         candidate.groupCode = draft.groupCode;
         candidate.groupPassword = draft.groupPassword;
+        candidate.roomName = "";
+        candidate.roomOwnerId = "";
+    } else if (candidate.roomOwnerId.isEmpty() && !draft.roomName.isEmpty()) {
+        // Migration path for rooms created before shared room metadata existed.
+        candidate.roomName = draft.roomName;
+        candidate.roomOwnerId = candidate.deviceId;
+    } else if (candidate.ownsRoom()) {
+        candidate.roomName = draft.roomName.isEmpty() ? String(product::kDisplayTitle) : draft.roomName;
     }
 
     if (!deriveRoomToken(candidate) || !candidate.complete() || !saveSettings(candidate)) return false;
