@@ -3,11 +3,16 @@
 #include "ProductInfo.h"
 
 namespace friendbox::display {
+namespace {
+constexpr Area kMenuBody{16, 38, 294, 105};
+constexpr Area kPageIndicator{270, 10, 40, 8};
+constexpr size_t kInfoPageCount = 4;
+}
 
 void Display::boot(const String& line) {
     clear();
-    centered(product::kName, 55, 3, TFT_WHITE);
-    centered(line, 96, 1, _gfx.color565(155, 155, 155));
+    centered({0, 55, 320, 24}, product::kName, 3, TFT_WHITE);
+    centered({0, 96, 320, 8}, line, 1, _gfx.color565(155, 155, 155));
 }
 
 void Display::idle(const String& timeText, size_t unread, const String& network,
@@ -15,18 +20,16 @@ void Display::idle(const String& timeText, size_t unread, const String& network,
     clear();
     const uint16_t a = accentColor(accentRgb);
     title(product::kDisplayTitle, a);
-    if (!timeText.isEmpty()) centered(timeText, 48, 4, TFT_WHITE);
+    drawClock({0, 48, 320, 32}, timeText, 4, TFT_WHITE);
     if (unread > 0) {
-        centered(String(unread) + (unread == 1 ? " NEW MESSAGE" : " NEW MESSAGES"),
-                 timeText.isEmpty() ? 67 : 91, 2, a);
+        centered({0, timeText.isEmpty() ? 67 : 91, 320, 16},
+                 String(unread) + (unread == 1 ? " NEW MESSAGE" : " NEW MESSAGES"), 2, a);
     } else {
-        centered("all caught up", timeText.isEmpty() ? 70 : 94, 2,
+        centered({0, timeText.isEmpty() ? 70 : 94, 320, 16}, "all caught up", 2,
                  _gfx.color565(180, 180, 180));
     }
-    _gfx.setTextSize(1);
-    _gfx.setTextColor(network == "CONNECTED" ? a : _gfx.color565(150, 150, 150));
-    _gfx.setCursor(253, 11);
-    _gfx.print(network == "CONNECTED" ? "ONLINE" : network);
+    drawText({253, 11, 57, 8}, network == "CONNECTED" ? "ONLINE" : network, 1,
+             network == "CONNECTED" ? a : _gfx.color565(150, 150, 150));
     footer("tap inbox   hold send   long more");
 }
 
@@ -35,20 +38,11 @@ void Display::inbox(const String& sender, const String& text, const String& when
     clear();
     const uint16_t a = accentColor(accentRgb);
     title("INBOX", a);
-    _gfx.setTextSize(1);
-    _gfx.setTextColor(_gfx.color565(155, 155, 155));
-    _gfx.setCursor(270, 10);
-    _gfx.printf("%u/%u", static_cast<unsigned>(position + 1), static_cast<unsigned>(count));
-    _gfx.setTextSize(2);
-    _gfx.setTextColor(unread ? a : TFT_WHITE);
-    _gfx.setCursor(10, 42);
-    _gfx.print(unread ? "* " : "  ");
-    _gfx.print(sender);
-    wrapped(text, 10, 72, 300, 2, TFT_WHITE, 2);
-    _gfx.setTextSize(1);
-    _gfx.setTextColor(_gfx.color565(145, 145, 145));
-    _gfx.setCursor(10, 136);
-    _gfx.print(when);
+    drawPageIndicator(kPageIndicator, position, count, _gfx.color565(155, 155, 155));
+    drawText({10, 42, 300, 16}, String(unread ? "* " : "  ") + sender, 2,
+             unread ? a : TFT_WHITE);
+    wrapped({10, 72, 300, 40}, text, 2, TFT_WHITE, 2);
+    drawText({10, 136, 300, 8}, when, 1, _gfx.color565(145, 145, 145));
     footer("tap next   hold mark read   long back");
 }
 
@@ -57,23 +51,9 @@ void Display::sendMenu(const std::string* items, size_t count, size_t selected,
     clear();
     const uint16_t a = accentColor(accentRgb);
     title("SEND", a);
-    const size_t visible = count < 5 ? count : 5;
-    const size_t start = selected >= visible ? selected - visible + 1 : 0;
-    for (size_t row = 0; row < visible && start + row < count; ++row) {
-        const size_t i = start + row;
-        _gfx.setTextSize(2);
-        _gfx.setTextColor(i == selected ? a : TFT_WHITE);
-        _gfx.setCursor(16, 38 + static_cast<int>(row) * 21);
-        _gfx.print(i == selected ? "> " : "  ");
-        String label(items[i].c_str());
-        if (label.length() > 22) label = label.substring(0, 19) + "...";
-        _gfx.print(label);
-    }
+    drawMenuList(kMenuBody, items, count, selected, a);
     if (!connected) {
-        _gfx.setTextSize(1);
-        _gfx.setTextColor(_gfx.color565(190, 190, 190));
-        _gfx.setCursor(245, 10);
-        _gfx.print("OFFLINE");
+        drawText({245, 10, 65, 8}, "OFFLINE", 1, _gfx.color565(190, 190, 190));
     }
     footer("tap next   hold send   long back");
 }
@@ -83,18 +63,7 @@ void Display::selectionMenu(const String& heading, const std::string* items, siz
     clear();
     const uint16_t a = accentColor(accentRgb);
     title(heading, a);
-    const size_t visible = count < 5 ? count : 5;
-    const size_t start = selected >= visible ? selected - visible + 1 : 0;
-    for (size_t row = 0; row < visible && start + row < count; ++row) {
-        const size_t i = start + row;
-        _gfx.setTextSize(2);
-        _gfx.setTextColor(i == selected ? a : TFT_WHITE);
-        _gfx.setCursor(16, 38 + static_cast<int>(row) * 21);
-        String label(items[i].c_str());
-        if (label.length() > 22) label = label.substring(0, 19) + "...";
-        _gfx.print(i == selected ? "> " : "  ");
-        _gfx.print(label);
-    }
+    drawMenuList(kMenuBody, items, count, selected, a);
     footer(help);
 }
 
@@ -105,19 +74,14 @@ void Display::composer(const String& heading, const std::string& text, const std
     title(heading, a);
     String body(text.c_str());
     if (body.length() > 69) body = "..." + body.substring(body.length() - 66);
-    wrapped(body.isEmpty() ? String("start typing...") : body, 12, 39, 296, 2,
+    wrapped({12, 39, 296, 60}, body.isEmpty() ? String("start typing...") : body, 2,
             body.isEmpty() ? _gfx.color565(145, 145, 145) : TFT_WHITE, 3);
 
-    _gfx.setTextSize(3);
-    _gfx.setTextColor(a);
-    _gfx.setCursor(12, 108);
-    _gfx.print(code.empty() ? "_" : code.c_str());
-    _gfx.setTextSize(2);
-    _gfx.setTextColor(invalid || full ? _gfx.color565(255, 95, 95) : TFT_WHITE);
-    _gfx.setCursor(226, 112);
-    if (full) _gfx.print("FULL");
-    else if (invalid) _gfx.print("INVALID");
-    else if (preview != '\0') _gfx.print(preview);
+    drawText({12, 108, 200, 24}, code.empty() ? String("_") : String(code.c_str()), 3, a);
+    const uint16_t previewColor = invalid || full ? _gfx.color565(255, 95, 95) : TFT_WHITE;
+    if (full) drawText({226, 112, 82, 16}, "FULL", 2, previewColor);
+    else if (invalid) drawText({226, 112, 82, 16}, "INVALID", 2, previewColor);
+    else if (preview != '\0') drawText({226, 112, 82, 16}, String(preview), 2, previewColor);
     footer("short .   longer -   very long menu");
 }
 
@@ -127,41 +91,33 @@ void Display::info(size_t page, const String& name, const String& groupCode,
                    const String& version, uint32_t accentRgb) {
     clear();
     const uint16_t a = accentColor(accentRgb);
+    const size_t infoPage = page % kInfoPageCount;
     title("INFO", a);
-    _gfx.setTextSize(2);
-    _gfx.setTextColor(TFT_WHITE);
-    if (page % 4 == 0) {
-        _gfx.setCursor(12, 42); _gfx.print(name);
-        _gfx.setTextSize(1);
-        _gfx.setCursor(12, 78); _gfx.print("Wi-Fi: " + wifi);
-        _gfx.setCursor(12, 95); _gfx.print("MQTT:   " + mqtt);
-        _gfx.setCursor(12, 112); _gfx.print("Firmware: " + version);
-    } else if (page % 4 == 1) {
-        _gfx.setCursor(12, 42); _gfx.print("Room " + groupCode);
-        _gfx.setTextSize(1);
-        _gfx.setCursor(12, 80); _gfx.print("Password");
-        _gfx.setTextSize(3);
-        _gfx.setTextColor(a);
-        _gfx.setCursor(12, 101); _gfx.print(groupPassword);
-    } else if (page % 4 == 2) {
-        _gfx.setCursor(12, 48); _gfx.print("Accent");
-        _gfx.setTextSize(3);
-        _gfx.setTextColor(a);
-        _gfx.setCursor(12, 82); _gfx.print(accentName);
-        _gfx.setTextSize(1);
-        _gfx.setTextColor(TFT_WHITE);
-        _gfx.setCursor(12, 126); _gfx.print("Change from phone setup");
+    drawPageIndicator(kPageIndicator, infoPage, kInfoPageCount,
+                      _gfx.color565(155, 155, 155));
+    if (infoPage == 0) {
+        drawText({12, 42, 296, 16}, name, 2, TFT_WHITE);
+        const DetailRow rows[] = {
+            {"Wi-Fi: ", wifi},
+            {"MQTT:   ", mqtt},
+            {"Firmware: ", version},
+        };
+        drawDetailList({12, 78, 296, 51}, rows, 3, 1, TFT_WHITE);
+    } else if (infoPage == 1) {
+        drawText({12, 42, 296, 16}, "Room " + groupCode, 2, TFT_WHITE);
+        drawText({12, 80, 296, 8}, "Password", 1, TFT_WHITE);
+        drawText({12, 101, 296, 24}, groupPassword, 3, a);
+    } else if (infoPage == 2) {
+        drawText({12, 48, 296, 16}, "Accent", 2, TFT_WHITE);
+        drawText({12, 82, 296, 24}, accentName, 3, a);
+        drawText({12, 126, 296, 8}, "Change from phone setup", 1, TFT_WHITE);
     } else {
-        _gfx.setCursor(12, 48); _gfx.print("Software update");
-        _gfx.setTextSize(2);
-        _gfx.setTextColor(a);
-        _gfx.setCursor(12, 82); _gfx.print(ota);
-        _gfx.setTextSize(1);
-        _gfx.setTextColor(TFT_WHITE);
+        drawText({12, 48, 296, 16}, "Software update", 2, TFT_WHITE);
+        drawText({12, 82, 296, 16}, ota, 2, a);
         if (otaDetail.isEmpty()) {
-            _gfx.setCursor(12, 114); _gfx.print("Checks after startup, then every 12h");
+            drawText({12, 114, 296, 8}, "Checks after startup, then every 12h", 1, TFT_WHITE);
         } else {
-            wrapped(otaDetail, 12, 110, 296, 1, TFT_WHITE, 2);
+            wrapped({12, 110, 296, 22}, otaDetail, 1, TFT_WHITE, 2);
         }
     }
     footer("tap page   long back");
@@ -170,22 +126,24 @@ void Display::info(size_t page, const String& name, const String& groupCode,
 void Display::notification(const String& titleText, const String& body, uint32_t accentRgb) {
     clear();
     const uint16_t a = accentColor(accentRgb);
-    centered(titleText, 40, 2, a);
-    wrapped(body, 18, 78, 284, 2, TFT_WHITE, 2);
+    centered({0, 40, 320, 16}, titleText, 2, a);
+    wrapped({18, 78, 284, 40}, body, 2, TFT_WHITE, 2);
 }
 
 void Display::setupMode(const String& apName) {
     clear();
-    centered("SETUP MODE", 35, 2, TFT_WHITE);
-    centered("Connect your phone to", 73, 1, _gfx.color565(175, 175, 175));
-    centered(apName, 94, 2, TFT_WHITE);
-    centered("then open the Wi-Fi sign-in page", 127, 1, _gfx.color565(175, 175, 175));
+    centered({0, 35, 320, 16}, "SETUP MODE", 2, TFT_WHITE);
+    centered({0, 73, 320, 8}, "Connect your phone to", 1, _gfx.color565(175, 175, 175));
+    centered({0, 94, 320, 16}, apName, 2, TFT_WHITE);
+    centered({0, 127, 320, 8}, "then open the Wi-Fi sign-in page", 1,
+             _gfx.color565(175, 175, 175));
 }
 
 void Display::fatal(const String& message) {
     clear();
-    centered(String(product::kDisplayTitle) + " ERROR", 35, 2, _gfx.color565(255, 95, 95));
-    wrapped(message, 18, 76, 284, 2, TFT_WHITE, 3);
+    centered({0, 35, 320, 16}, String(product::kDisplayTitle) + " ERROR", 2,
+             _gfx.color565(255, 95, 95));
+    wrapped({18, 76, 284, 60}, message, 2, TFT_WHITE, 3);
 }
 
 }  // namespace friendbox::display

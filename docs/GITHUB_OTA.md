@@ -26,26 +26,36 @@ Public CI builds do not contain `include/LocalServiceConfig.h`. MQTT credentials
 
 Every push and pull request runs `.github/workflows/build.yml`, which performs host tests, repository validation, and a complete PlatformIO build. A passing normal build does not publish firmware to devices.
 
+The release workflow has an additional explicit gate: a normal push to `main` is ignored unless that push changes `release/VERSION`.
+
 ## Publish an update
 
-The release workflow accepts only a numeric semantic-version tag:
+The normal release path is to change `release/VERSION` to the next numeric semantic version and merge that change to `main`, for example:
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0
+```text
+0.1.3
 ```
 
-`.github/workflows/release.yml` then:
+A `main` push that changes that file runs `.github/workflows/release.yml`. The workflow validates the version, builds the firmware, and creates the matching GitHub Release and tag (for example `v0.1.3`). This keeps releases explicit while allowing the repository automation to do the tag creation and publishing.
 
-1. validates `vMAJOR.MINOR.PATCH`;
-2. writes the tag version into `include/GeneratedVersion.h` for that build;
+Traditional numeric tags are still supported:
+
+```bash
+git tag v0.1.3
+git push origin v0.1.3
+```
+
+For either release path, `.github/workflows/release.yml`:
+
+1. validates `MAJOR.MINOR.PATCH` / `vMAJOR.MINOR.PATCH`;
+2. writes the release version into `include/GeneratedVersion.h` for that build;
 3. runs host tests and repository validation;
 4. builds one universal firmware image;
 5. copies it to `dist/firmware.bin`;
 6. generates `dist/manifest.json` with version, size, SHA-256, and release URL; and
 7. creates a GitHub Release containing both assets.
 
-The committed development header remains `0.1.0-dev`; the release workflow's generated value belongs to the tagged build. Release `v0.1.0` is the baseline image used for the first physical OTA test.
+The committed development header remains `0.1.0-dev`; the release workflow's generated value belongs to the release build.
 
 No GitHub token is stored on a FriendBox. The workflow uses GitHub's short-lived repository token to create the release.
 
