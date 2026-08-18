@@ -160,6 +160,14 @@ assert "routeIncoming" in app_source, "incoming feature messages need an applica
 ui_header = (ROOT / "src/ui/Ui.h").read_text(encoding="utf-8")
 assert "Intent handleAction" in ui_header, "UI navigation must emit intents rather than perform side effects"
 
+display_header = (ROOT / "src/display/Display.h").read_text(encoding="utf-8")
+display_screens = (ROOT / "src/display/DisplayScreens.cpp").read_text(encoding="utf-8")
+for expected in ["struct Area", "struct DetailRow", "drawClock", "drawMenuList", "drawDetailList"]:
+    assert expected in display_header, f"display layout primitive missing: {expected}"
+assert display_screens.count("drawMenuList(") >= 2, "menu screens must share the menu-list renderer"
+assert "drawDetailList(" in display_screens, "detail screens must use the detail-list renderer"
+assert "drawClock(" in display_screens, "clock should remain an independently drawable component"
+
 # Guard against accidentally committing common token formats.
 secret_patterns = {
     "GitHub PAT": r"\bghp_[A-Za-z0-9]{20,}\b",
