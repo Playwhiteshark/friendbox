@@ -22,6 +22,8 @@ public:
     void update();
 
 private:
+    enum class BootAction : uint8_t { Normal, Setup, FactoryReset };
+
     config::DeviceConfig _config;
     display::Display _display;
     hardware::ButtonDriver _button;
@@ -47,7 +49,8 @@ private:
 
     bool initializePersistentState();
     bool initializeRuntimeServices();
-    bool bootSetupRequested();
+    BootAction bootActionRequested();
+    bool performFactoryReset();
     bool ensureConfigured(bool forced);
     void updateServices();
     void handleButtonRelease(const hardware::ButtonRelease& release);
