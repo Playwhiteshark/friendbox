@@ -14,6 +14,7 @@ constexpr uint32_t kDebounceMs = 25;
 constexpr uint32_t kTapMaxMs = 450;
 constexpr uint32_t kHoldMaxMs = 1200;
 constexpr uint32_t kBootSetupHoldMs = 5000;
+constexpr uint32_t kBootFactoryResetHoldMs = 10000;
 
 constexpr size_t kMaxStoredMessages = 50;
 constexpr size_t kMaxTextBytes = 256;

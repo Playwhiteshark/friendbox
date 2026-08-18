@@ -83,6 +83,7 @@ public:
     const Settings& settings() const { return _settings; }
     SettingsDraft draft() const;
     bool apply(SettingsDraft draft, RoomAction roomAction);
+    bool resetUserStatePreservingService();
     uint32_t nextOutgoingCounter();
     bool setAccent(core::Accent accent);
 

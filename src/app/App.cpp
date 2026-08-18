@@ -1,6 +1,7 @@
 #include "App.h"
 
 #include <WiFi.h>
+#include <esp_system.h>
 #include "BuildConfig.h"
 #include "FriendBoxCore.h"
 #include "ProductInfo.h"
@@ -23,7 +24,12 @@ void App::begin() {
     _ui.begin();
 
     if (!initializePersistentState()) return;
-    if (!ensureConfigured(bootSetupRequested())) {
+    const BootAction bootAction = bootActionRequested();
+    if (bootAction == BootAction::FactoryReset) {
+        performFactoryReset();
+        return;
+    }
+    if (!ensureConfigured(bootAction == BootAction::Setup)) {
         _display.fatal("Setup was not completed. Restart and try again.");
         return;
     }
@@ -62,16 +68,47 @@ bool App::initializeRuntimeServices() {
     return true;
 }
 
-bool App::bootSetupRequested() {
-    if (digitalRead(build::kButtonPin) != LOW) return false;
+App::BootAction App::bootActionRequested() {
+    if (digitalRead(build::kButtonPin) != LOW) return BootAction::Normal;
+
+    BootAction action = BootAction::Normal;
     const uint32_t started = millis();
     while (digitalRead(build::kButtonPin) == LOW) {
         const uint32_t held = millis() - started;
-        _display.boot(held >= 1000 ? "keep holding for setup..." : "button held...");
-        if (held >= build::kBootSetupHoldMs) return true;
+        if (held >= build::kBootFactoryResetHoldMs) {
+            action = BootAction::FactoryReset;
+            _display.boot("release to factory reset");
+        } else if (held >= build::kBootSetupHoldMs) {
+            action = BootAction::Setup;
+            _display.boot("release setup / hold reset");
+        } else {
+            _display.boot(held >= 1000 ? "keep holding for setup..." : "button held...");
+        }
         delay(20);
     }
-    return false;
+    return action;
+}
+
+bool App::performFactoryReset() {
+    _display.boot("resetting...");
+    const bool configReset = _config.resetUserStatePreservingService();
+    _store.clear();
+
+    bool wifiReset = WiFi.mode(WIFI_STA);
+    delay(50);
+    if (wifiReset) wifiReset = WiFi.disconnect(true, true);
+
+    if (!configReset || !wifiReset) {
+        Serial.printf("Factory reset failed; config=%d wifi=%d\n", configReset, wifiReset);
+        _display.fatal("Factory reset failed. Restart and try again.");
+        return false;
+    }
+
+    Serial.println("Factory reset complete; restarting into setup");
+    _display.boot("factory reset complete");
+    delay(500);
+    esp_restart();
+    return true;
 }
 
 bool App::ensureConfigured(bool forced) {

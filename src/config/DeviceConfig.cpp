@@ -185,6 +185,42 @@ SettingsDraft DeviceConfig::draft() const {
     return result;
 }
 
+bool DeviceConfig::resetUserStatePreservingService() {
+    const String deviceId = _settings.deviceId;
+    const String mqttHost = _settings.mqttHost;
+    const uint16_t mqttPort = _settings.mqttPort;
+    const String mqttUsername = _settings.mqttUsername;
+    const String mqttPassword = _settings.mqttPassword;
+
+    const char* userKeys[] = {
+        kNameKey, kGroupKey, kGroupPasswordKey, kRoomTokenKey,
+        kTimezoneKey, kAccentKey, kCustomColor1Key, kCustomColor2Key,
+        kBrightnessKey, kScreenTimeoutKey, kClockVisibleKey,
+        kMorseDashKey, kMorseLetterKey, kMorseWordKey, kMorseControlKey,
+        kPresetMaskKey, kOutgoingCounterKey,
+    };
+
+    bool ok = true;
+    for (const char* key : userKeys) {
+        if (_prefs.isKey(key)) ok &= _prefs.remove(key);
+    }
+    for (size_t i = 0; i < core::PresetCatalog::kCapacity; ++i) {
+        const String key = presetKey(i);
+        if (_prefs.isKey(key.c_str())) ok &= _prefs.remove(key.c_str());
+    }
+
+    Settings reset;
+    reset.deviceId = deviceId;
+    reset.mqttHost = mqttHost;
+    reset.mqttPort = mqttPort;
+    reset.mqttUsername = mqttUsername;
+    reset.mqttPassword = mqttPassword;
+    _settings = reset;
+    _outCounter = 0;
+    _serviceSeededThisBoot = false;
+    return ok;
+}
+
 bool DeviceConfig::saveSettings(const Settings& settings) {
     bool ok = true;
     ok &= _prefs.putString(kNameKey, settings.displayName) > 0 || settings.displayName.isEmpty();
