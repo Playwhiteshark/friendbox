@@ -42,6 +42,7 @@ private:
     bool _lastMqttConnected{false};
     size_t _lastUnread{0};
     String _lastClock;
+    String _lastRoomName;
     String _lastOtaLabel;
     String _lastOtaDetail;
     bool _screenAwake{true};

@@ -15,11 +15,11 @@ void Display::boot(const String& line) {
     centered({0, 96, 320, 8}, line, 1, _gfx.color565(155, 155, 155));
 }
 
-void Display::idle(const String& timeText, size_t unread, const String& network,
-                   uint32_t accentRgb) {
+void Display::idle(const String& roomName, const String& timeText, size_t unread,
+                   const String& network, uint32_t accentRgb) {
     clear();
     const uint16_t a = accentColor(accentRgb);
-    title(product::kDisplayTitle, a);
+    title(roomName.isEmpty() ? String(product::kDisplayTitle) : roomName, a);
     drawClock({0, 48, 320, 32}, timeText, 4, TFT_WHITE);
     if (unread > 0) {
         centered({0, timeText.isEmpty() ? 67 : 91, 320, 16},

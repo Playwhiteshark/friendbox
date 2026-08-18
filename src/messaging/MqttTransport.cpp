@@ -108,6 +108,13 @@ bool MqttTransport::publish(const String& payload) {
                            payload.length()) != 0;
 }
 
+bool MqttTransport::publishRetained(const String& payload) {
+    if (!_connected.load(std::memory_order_relaxed) || payload.isEmpty() || payload.length() > build::kMaxMqttPayloadBytes) return false;
+    return _client.publish(_topic.c_str(), 1, true,
+                           reinterpret_cast<const uint8_t*>(payload.c_str()),
+                           payload.length()) != 0;
+}
+
 bool MqttTransport::pollPayload(String& payload) {
     if (!_rxQueue) return false;
     Packet packet;

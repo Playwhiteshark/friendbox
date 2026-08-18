@@ -26,7 +26,8 @@ public:
     uint16_t accentColor(uint32_t rgb) const;
 
     void boot(const String& line = "starting...");
-    void idle(const String& timeText, size_t unread, const String& network, uint32_t accentRgb);
+    void idle(const String& roomName, const String& timeText, size_t unread,
+              const String& network, uint32_t accentRgb);
     void inbox(const String& sender, const String& text, const String& when,
                size_t position, size_t count, bool unread, uint32_t accentRgb);
     void sendMenu(const std::string* items, size_t count, size_t selected,

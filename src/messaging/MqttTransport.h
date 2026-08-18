@@ -17,6 +17,7 @@ public:
     void update(bool wifiConnected);
     bool connected() const { return _connected.load(std::memory_order_relaxed); }
     bool publish(const String& payload);
+    bool publishRetained(const String& payload);
     bool pollPayload(String& payload);
     void disconnect();
 

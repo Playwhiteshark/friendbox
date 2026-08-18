@@ -13,7 +13,8 @@ uint32_t activeAccent(const RenderContext& context) {
 }
 
 void renderIdle(display::Display& display, const RenderContext& context) {
-    display.idle(context.settings.clockVisible ? context.clock : String(),
+    display.idle(context.settings.roomName,
+                 context.settings.clockVisible ? context.clock : String(),
                  context.messages.unreadCount(),
                  context.mqttConnected ? "CONNECTED" : context.wifi,
                  activeAccent(context));

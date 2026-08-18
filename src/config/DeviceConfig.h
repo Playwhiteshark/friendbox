@@ -17,6 +17,8 @@ struct Settings {
     String groupCode;
     String groupPassword;
     String roomToken;
+    String roomName;
+    String roomOwnerId;
     String mqttHost;
     uint16_t mqttPort{service::kDefaultMqttTlsPort};
     String mqttUsername;
@@ -43,6 +45,10 @@ struct Settings {
                roomToken.length() == 32;
     }
 
+    bool ownsRoom() const {
+        return !deviceId.isEmpty() && roomOwnerId == deviceId;
+    }
+
     bool hasBroker() const {
         return mqttHost.length() > 0 && mqttPort > 0 &&
                mqttUsername.length() > 0 && mqttPassword.length() > 0;
@@ -60,6 +66,7 @@ struct SettingsDraft {
     String displayName;
     String groupCode;
     String groupPassword;
+    String roomName;
     String mqttHost;
     uint16_t mqttPort{service::kDefaultMqttTlsPort};
     String mqttUsername;
@@ -83,6 +90,8 @@ public:
     const Settings& settings() const { return _settings; }
     SettingsDraft draft() const;
     bool apply(SettingsDraft draft, RoomAction roomAction);
+    bool applyRoomMetadata(const String& roomName, const String& ownerId);
+    bool canEditRoomName() const { return _settings.roomOwnerId.isEmpty() || _settings.ownsRoom(); }
     bool resetUserStatePreservingService();
     uint32_t nextOutgoingCounter();
     bool setAccent(core::Accent accent);
