@@ -200,6 +200,9 @@ bool DeviceConfig::applyRoomMetadata(const String& roomName, const String& owner
     owner.trim();
     if (name.isEmpty() || name.length() > build::kMaxRoomNameChars ||
         owner.isEmpty() || owner.length() > 32) return false;
+    // The creator is authoritative locally; it must not be rolled back by an
+    // older retained packet that was queued just before it republishes a rename.
+    if (_settings.ownsRoom()) return false;
     if (!_settings.roomOwnerId.isEmpty() && _settings.roomOwnerId != owner) return false;
     if (_settings.roomName == name && _settings.roomOwnerId == owner) return false;
 
@@ -346,6 +349,16 @@ bool DeviceConfig::apply(SettingsDraft draft, RoomAction roomAction) {
     candidate.morseTiming = draft.morseTiming;
     candidate.presets = draft.presets;
 
+    const auto applyEditableRoomName = [&]() {
+        if (candidate.roomOwnerId.isEmpty() && !draft.roomName.isEmpty()) {
+            // Migration path for rooms created before shared room metadata existed.
+            candidate.roomName = draft.roomName;
+            candidate.roomOwnerId = candidate.deviceId;
+        } else if (candidate.ownsRoom()) {
+            candidate.roomName = draft.roomName.isEmpty() ? String(product::kDisplayTitle) : draft.roomName;
+        }
+    };
+
     if (roomAction == RoomAction::Create) {
         createRoomCredentials(candidate);
         candidate.roomName = draft.roomName.isEmpty() ? String(product::kDisplayTitle) : draft.roomName;
@@ -353,16 +366,18 @@ bool DeviceConfig::apply(SettingsDraft draft, RoomAction roomAction) {
     } else if (roomAction == RoomAction::Join) {
         if (!core::validGroupCode(draft.groupCode.c_str()) ||
             !core::validGroupPassword(draft.groupPassword.c_str())) return false;
+        const bool sameRoom = draft.groupCode == candidate.groupCode &&
+                              draft.groupPassword == candidate.groupPassword;
         candidate.groupCode = draft.groupCode;
         candidate.groupPassword = draft.groupPassword;
-        candidate.roomName = "";
-        candidate.roomOwnerId = "";
-    } else if (candidate.roomOwnerId.isEmpty() && !draft.roomName.isEmpty()) {
-        // Migration path for rooms created before shared room metadata existed.
-        candidate.roomName = draft.roomName;
-        candidate.roomOwnerId = candidate.deviceId;
-    } else if (candidate.ownsRoom()) {
-        candidate.roomName = draft.roomName.isEmpty() ? String(product::kDisplayTitle) : draft.roomName;
+        if (sameRoom) {
+            applyEditableRoomName();
+        } else {
+            candidate.roomName = "";
+            candidate.roomOwnerId = "";
+        }
+    } else {
+        applyEditableRoomName();
     }
 
     if (!deriveRoomToken(candidate) || !candidate.complete() || !saveSettings(candidate)) return false;
