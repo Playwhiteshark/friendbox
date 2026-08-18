@@ -3,6 +3,7 @@
 #include <WiFiManager.h>
 #include <cctype>
 #include <vector>
+#include "BuildConfig.h"
 #include "FriendBoxCore.h"
 #include "ProductInfo.h"
 
@@ -14,7 +15,7 @@ const char kHead[] = R"HTML(
 body{background:#0c0f12;color:#eef3f6;font-family:system-ui,-apple-system,sans-serif}
 .wrap{max-width:430px}button,.btn,input,select{border-radius:9px}
 h1,h2,h3{letter-spacing:.03em}.msg{color:#9deff2}
-.fb-data,label[for=name],label[for=group],label[for=gpass],label[for=mhost],
+.fb-data,label[for=name],label[for=group],label[for=gpass],label[for=rname],label[for=mhost],
 label[for=mport],label[for=muser],label[for=mpass],label[for=accent],
 label[for=color1],label[for=color2],label[for=bright],label[for=timeout],
 label[for=clock],label[for=tz],label[for=mdot],label[for=mletter],
@@ -25,6 +26,7 @@ label[for=p2],label[for=p3],label[for=p4]{display:none!important}
 .fb-help{font-size:.82rem;color:#b7c1c8;margin:.25rem 0 .8rem}
 .fb-field{display:block;margin:.65rem 0}.fb-field span{display:block;margin-bottom:.3rem;font-size:.9rem}
 .fb-field input,.fb-field select{box-sizing:border-box;width:100%;padding:.65rem;background:#171c21;color:#eef3f6;border:1px solid #485863}
+.fb-field input[readonly]{color:#9faab1;background:#11161a}
 .fb-color-row{display:grid;grid-template-columns:1fr 72px;gap:.7rem;align-items:end}
 .fb-color-row input[type=color]{height:44px;padding:.25rem}
 .fb-range{display:grid;grid-template-columns:1fr 3rem;gap:.65rem;align-items:center}
@@ -57,17 +59,27 @@ String selected(bool value) {
     return value ? " selected" : "";
 }
 
-String buildSettingsHtml(const config::SettingsDraft& initial, bool configured) {
+String buildSettingsHtml(const config::SettingsDraft& initial, bool configured,
+                         bool canEditRoomName) {
     const String accent = core::accentName(initial.accent);
     const String color1(core::rgbHex(initial.customColor1).c_str());
     const String color2(core::rgbHex(initial.customColor2).c_str());
     const String timezone = configured ? String(initial.utcOffsetMinutes) : String("AUTO");
+    const String roomNameReadonly = configured && !canEditRoomName ? String(" readonly") : String();
 
     String html;
-    html.reserve(8500);
+    html.reserve(9000);
     html += "<div class='fb-settings'><p class='fb-help'>FriendBox settings are separate from Wi-Fi. Save this page, then use Configure Wi-Fi if the network also needs changing.</p>";
     html += "<section class='fb-section'><h2>FriendBox</h2>";
     html += "<label class='fb-field'><span>Your name</span><input id='fb-name' data-target='name' maxlength='24' value='" + htmlEscape(initial.displayName) + "'></label>";
+    html += "<label class='fb-field'><span>Room name</span><input id='fb-rname' data-target='rname' maxlength='" + String(build::kMaxRoomNameChars) + "' placeholder='" + String(product::kDisplayTitle) + "' value='" + htmlEscape(initial.roomName) + "'" + roomNameReadonly + "></label>";
+    if (!configured) {
+        html += "<p class='fb-help'>This is the shared title shown on every box if you create a room. It is ignored when joining an existing room.</p>";
+    } else if (canEditRoomName) {
+        html += "<p class='fb-help'>This title is shared with every box in the room.</p>";
+    } else {
+        html += "<p class='fb-help'>This title is shared by the room. Only the room creator can change it.</p>";
+    }
     html += "<label class='fb-field'><span>Room code (leave both blank to create)</span><input id='fb-group' data-target='group' maxlength='6' value='" + htmlEscape(initial.groupCode) + "'></label>";
     html += "<label class='fb-field'><span>Room password</span><input id='fb-gpass' data-target='gpass' type='password' inputmode='numeric' maxlength='6' value='" + htmlEscape(initial.groupPassword) + "'></label></section>";
 
@@ -137,8 +149,8 @@ uint32_t parseColor(const String& value, uint32_t fallback) {
 
 class PortalForm {
 public:
-    PortalForm(const config::SettingsDraft& initial, bool configured)
-        : _initial(initial), _formHtml(buildSettingsHtml(initial, configured)),
+    PortalForm(const config::SettingsDraft& initial, bool configured, bool canEditRoomName)
+        : _initial(initial), _formHtml(buildSettingsHtml(initial, configured, canEditRoomName)),
           _portValue(String(initial.mqttPort)),
           _offsetValue(configured ? String(initial.utcOffsetMinutes) : String("AUTO")),
           _accentValue(core::accentName(initial.accent)),
@@ -154,6 +166,7 @@ public:
           _name("name", "", _initial.displayName.c_str(), 24, kHidden),
           _group("group", "", _initial.groupCode.c_str(), 6, kHidden),
           _groupPassword("gpass", "", _initial.groupPassword.c_str(), 6, kHidden),
+          _roomName("rname", "", _initial.roomName.c_str(), build::kMaxRoomNameChars, kHidden),
           _host("mhost", "", _initial.mqttHost.c_str(), 96, kHidden),
           _port("mport", "", _portValue.c_str(), 5, kHidden),
           _username("muser", "", _initial.mqttUsername.c_str(), 64, kHidden),
@@ -178,7 +191,7 @@ public:
 
     void addTo(WiFiManager& manager) {
         WiFiManagerParameter* fields[] = {
-            &_name, &_group, &_groupPassword, &_host, &_port, &_username, &_password,
+            &_name, &_group, &_groupPassword, &_roomName, &_host, &_port, &_username, &_password,
             &_accent, &_color1, &_color2, &_brightness, &_timeout, &_clock, &_timezone,
             &_morseDash, &_morseLetter, &_morseWord, &_morseControl,
             &_preset0, &_preset1, &_preset2, &_preset3, &_preset4, &_visibleForm,
@@ -191,6 +204,7 @@ public:
         result.displayName = String(_name.getValue());
         result.groupCode = String(_group.getValue());
         result.groupPassword = String(_groupPassword.getValue());
+        result.roomName = String(_roomName.getValue());
         result.mqttHost = String(_host.getValue());
         result.mqttPort = parseU16(String(_port.getValue()), _initial.mqttPort, 1, 65535);
         result.mqttUsername = String(_username.getValue());
@@ -219,7 +233,7 @@ private:
     String _formHtml, _portValue, _offsetValue, _accentValue, _color1Value, _color2Value;
     String _brightnessValue, _timeoutValue, _clockValue;
     String _morseDashValue, _morseLetterValue, _morseWordValue, _morseControlValue;
-    WiFiManagerParameter _name, _group, _groupPassword, _host, _port, _username, _password;
+    WiFiManagerParameter _name, _group, _groupPassword, _roomName, _host, _port, _username, _password;
     WiFiManagerParameter _accent, _color1, _color2, _brightness, _timeout, _clock, _timezone;
     WiFiManagerParameter _morseDash, _morseLetter, _morseWord, _morseControl;
     WiFiManagerParameter _preset0, _preset1, _preset2, _preset3, _preset4, _visibleForm;
@@ -246,7 +260,7 @@ SetupResult SetupPortal::run(config::DeviceConfig& config) {
     std::vector<const char*> menu{"param", "wifi", "exit"};
     manager.setMenu(menu);
 
-    PortalForm form(config.draft(), config.settings().complete());
+    PortalForm form(config.draft(), config.settings().complete(), config.canEditRoomName());
     form.addTo(manager);
 
     SetupResult result;
