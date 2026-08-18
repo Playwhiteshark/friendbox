@@ -24,7 +24,7 @@ private:
     bool _roomMetadataChanged{false};
 
     bool publishRoomMetadata();
-    void handleRoomMetadata(const String& payload);
+    bool handleRoomMetadata(const String& payload);
 };
 
 }  // namespace friendbox::messaging
