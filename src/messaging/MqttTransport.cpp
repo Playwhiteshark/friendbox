@@ -14,7 +14,9 @@ bool MqttTransport::begin(const config::Settings& settings) {
     _username = settings.mqttUsername;
     _password = settings.mqttPassword;
     _clientId = "friendbox-" + settings.deviceId;
-    _topic = "friendbox/v1/rooms/" + settings.roomToken + "/messages";
+    const String roomRoot = "friendbox/v1/rooms/" + settings.roomToken;
+    _messageTopic = roomRoot + "/messages";
+    _metadataTopic = roomRoot + "/meta";
 
     _rxQueue = xQueueCreate(build::kMqttRxQueueDepth, sizeof(Packet));
     if (!_rxQueue) return false;
@@ -57,7 +59,9 @@ void MqttTransport::update(bool wifiConnected) {
 void MqttTransport::onConnect(bool sessionPresent) {
     (void)sessionPresent;
     _connected.store(true, std::memory_order_relaxed);
-    if (_client.subscribe(_topic.c_str(), 1) == 0) {
+    const bool messageSubscribed = _client.subscribe(_messageTopic.c_str(), 1) != 0;
+    const bool metadataSubscribed = _client.subscribe(_metadataTopic.c_str(), 1) != 0;
+    if (!messageSubscribed || !metadataSubscribed) {
         _connected.store(false, std::memory_order_relaxed);
         _subscriptionRetryNeeded.store(true, std::memory_order_relaxed);
     }
@@ -69,49 +73,70 @@ void MqttTransport::onDisconnect(espMqttClientTypes::DisconnectReason reason) {
     _lastConnectAttempt.store(millis(), std::memory_order_relaxed);
 }
 
+void MqttTransport::assemble(PayloadKind kind, Assembly& assembly, const uint8_t* payload,
+                             size_t len, size_t index, size_t total) {
+    if (total == 0 || total > build::kMaxMqttPayloadBytes) return;
+    if (index == 0) {
+        assembly.total = total;
+        assembly.received = 0;
+        memset(assembly.data, 0, sizeof(assembly.data));
+    }
+    if (assembly.total != total || index != assembly.received ||
+        index + len > build::kMaxMqttPayloadBytes) {
+        assembly.total = 0;
+        assembly.received = 0;
+        return;
+    }
+
+    memcpy(assembly.data + index, payload, len);
+    assembly.received += len;
+    if (assembly.received == assembly.total && _rxQueue) {
+        Packet packet;
+        packet.kind = kind;
+        packet.length = static_cast<uint16_t>(assembly.total);
+        memcpy(packet.payload, assembly.data, assembly.total);
+        packet.payload[assembly.total] = '\0';
+        // The callback runs on espMqttClient's worker task. A short bounded wait lets
+        // the main loop drain a reconnect burst without allocating a large queue.
+        xQueueSend(_rxQueue, &packet, pdMS_TO_TICKS(25));
+        assembly.total = 0;
+        assembly.received = 0;
+    }
+}
+
 void MqttTransport::onMessage(const espMqttClientTypes::MessageProperties& properties,
                               const char* topic, const uint8_t* payload,
                               size_t len, size_t index, size_t total) {
     (void)properties;
-    if (!topic || _topic != topic || total == 0 || total > build::kMaxMqttPayloadBytes) return;
-
-    if (index == 0) {
-        _assemblyTotal = total;
-        _assemblyReceived = 0;
-        memset(_assembly, 0, sizeof(_assembly));
-    }
-    if (_assemblyTotal != total || index != _assemblyReceived || index + len > build::kMaxMqttPayloadBytes) {
-        _assemblyTotal = 0;
-        _assemblyReceived = 0;
-        return;
-    }
-
-    memcpy(_assembly + index, payload, len);
-    _assemblyReceived += len;
-    if (_assemblyReceived == _assemblyTotal && _rxQueue) {
-        Packet packet;
-        packet.length = static_cast<uint16_t>(_assemblyTotal);
-        memcpy(packet.payload, _assembly, _assemblyTotal);
-        packet.payload[_assemblyTotal] = '\0';
-        // The callback runs on espMqttClient's worker task. A short bounded wait lets
-        // the main loop drain a reconnect burst without allocating a large queue.
-        xQueueSend(_rxQueue, &packet, pdMS_TO_TICKS(25));
-        _assemblyTotal = 0;
-        _assemblyReceived = 0;
+    if (!topic) return;
+    if (_messageTopic == topic) {
+        assemble(PayloadKind::Message, _messageAssembly, payload, len, index, total);
+    } else if (_metadataTopic == topic) {
+        assemble(PayloadKind::RoomMetadata, _metadataAssembly, payload, len, index, total);
     }
 }
 
 bool MqttTransport::publish(const String& payload) {
-    if (!_connected.load(std::memory_order_relaxed) || payload.isEmpty() || payload.length() > build::kMaxMqttPayloadBytes) return false;
-    return _client.publish(_topic.c_str(), 1, false,
+    if (!_connected.load(std::memory_order_relaxed) || payload.isEmpty() ||
+        payload.length() > build::kMaxMqttPayloadBytes) return false;
+    return _client.publish(_messageTopic.c_str(), 1, false,
                            reinterpret_cast<const uint8_t*>(payload.c_str()),
                            payload.length()) != 0;
 }
 
-bool MqttTransport::pollPayload(String& payload) {
+bool MqttTransport::publishRoomMetadata(const String& payload) {
+    if (!_connected.load(std::memory_order_relaxed) || payload.isEmpty() ||
+        payload.length() > build::kMaxMqttPayloadBytes) return false;
+    return _client.publish(_metadataTopic.c_str(), 1, true,
+                           reinterpret_cast<const uint8_t*>(payload.c_str()),
+                           payload.length()) != 0;
+}
+
+bool MqttTransport::pollPayload(String& payload, PayloadKind& kind) {
     if (!_rxQueue) return false;
     Packet packet;
     if (xQueueReceive(_rxQueue, &packet, 0) != pdTRUE) return false;
+    kind = packet.kind;
     payload = String(packet.payload).substring(0, packet.length);
     return true;
 }
