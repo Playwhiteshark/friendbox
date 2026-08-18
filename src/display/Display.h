@@ -53,6 +53,7 @@ private:
     void wrapped(const Area& area, const String& text, uint8_t size, uint16_t color,
                  uint8_t maxLines = 3);
     void drawClock(const Area& area, const String& timeText, uint8_t size, uint16_t color);
+    void drawPageIndicator(const Area& area, size_t position, size_t count, uint16_t color);
     void drawMenuList(const Area& area, const std::string* items, size_t count,
                       size_t selected, uint16_t accent);
     void drawDetailList(const Area& area, const DetailRow* rows, size_t count,
