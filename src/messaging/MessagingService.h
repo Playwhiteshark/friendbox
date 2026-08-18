@@ -13,11 +13,18 @@ public:
     bool connected() const { return _transport.connected(); }
     bool sendText(const String& text, uint32_t timestamp);
     bool pollIncoming(Message& message);
+    bool consumeRoomMetadataChanged();
     void disconnect() { _transport.disconnect(); }
 
 private:
     config::DeviceConfig* _config{nullptr};
     MqttTransport _transport;
+    bool _wasConnected{false};
+    bool _metadataPublishPending{false};
+    bool _roomMetadataChanged{false};
+
+    bool publishRoomMetadata();
+    void handleRoomMetadata(const String& payload);
 };
 
 }  // namespace friendbox::messaging
