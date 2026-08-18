@@ -44,12 +44,23 @@ void Display::centered(const String& text, int16_t y, uint8_t size, uint16_t col
     _gfx.print(text);
 }
 
-void Display::title(const String& text, uint16_t accent) {
+void Display::title(const String& text, uint16_t accent, size_t position, size_t count) {
     _gfx.fillRect(0, 0, kWidth, 29, TFT_BLACK);
     _gfx.setTextSize(2);
     _gfx.setTextColor(accent);
     _gfx.setCursor(10, 8);
     _gfx.print(text);
+
+    if (count > 0) {
+        const String counter = String(static_cast<unsigned>(position + 1)) + "/" +
+                               String(static_cast<unsigned>(count));
+        _gfx.setTextSize(1);
+        _gfx.setTextColor(_gfx.color565(155, 155, 155));
+        const int16_t counterWidth = static_cast<int16_t>(counter.length() * 6U);
+        _gfx.setCursor(kWidth - 10 - counterWidth, 10);
+        _gfx.print(counter);
+    }
+
     _gfx.drawFastHLine(10, 28, 300, accent);
 }
 
@@ -59,6 +70,16 @@ void Display::footer(const String& text) {
     _gfx.setTextColor(_gfx.color565(150, 150, 150));
     _gfx.setCursor(10, 156);
     _gfx.print(text);
+}
+
+void Display::moreBelow(bool visible) {
+    if (!visible) return;
+    const String hint = "MORE v";
+    _gfx.setTextSize(1);
+    _gfx.setTextColor(_gfx.color565(150, 150, 150));
+    const int16_t hintWidth = static_cast<int16_t>(hint.length() * 6U);
+    _gfx.setCursor(kWidth - 10 - hintWidth, 139);
+    _gfx.print(hint);
 }
 
 void Display::wrapped(const String& text, int16_t x, int16_t y, int16_t maxWidth,
