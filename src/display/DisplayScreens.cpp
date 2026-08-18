@@ -5,6 +5,8 @@
 namespace friendbox::display {
 namespace {
 constexpr Area kMenuBody{16, 38, 294, 105};
+constexpr Area kPageIndicator{270, 10, 40, 8};
+constexpr size_t kInfoPageCount = 4;
 }
 
 void Display::boot(const String& line) {
@@ -36,8 +38,7 @@ void Display::inbox(const String& sender, const String& text, const String& when
     clear();
     const uint16_t a = accentColor(accentRgb);
     title("INBOX", a);
-    drawText({270, 10, 40, 8}, String(position + 1) + "/" + String(count), 1,
-             _gfx.color565(155, 155, 155));
+    drawPageIndicator(kPageIndicator, position, count, _gfx.color565(155, 155, 155));
     drawText({10, 42, 300, 16}, String(unread ? "* " : "  ") + sender, 2,
              unread ? a : TFT_WHITE);
     wrapped({10, 72, 300, 40}, text, 2, TFT_WHITE, 2);
@@ -90,8 +91,11 @@ void Display::info(size_t page, const String& name, const String& groupCode,
                    const String& version, uint32_t accentRgb) {
     clear();
     const uint16_t a = accentColor(accentRgb);
+    const size_t infoPage = page % kInfoPageCount;
     title("INFO", a);
-    if (page % 4 == 0) {
+    drawPageIndicator(kPageIndicator, infoPage, kInfoPageCount,
+                      _gfx.color565(155, 155, 155));
+    if (infoPage == 0) {
         drawText({12, 42, 296, 16}, name, 2, TFT_WHITE);
         const DetailRow rows[] = {
             {"Wi-Fi: ", wifi},
@@ -99,11 +103,11 @@ void Display::info(size_t page, const String& name, const String& groupCode,
             {"Firmware: ", version},
         };
         drawDetailList({12, 78, 296, 51}, rows, 3, 1, TFT_WHITE);
-    } else if (page % 4 == 1) {
+    } else if (infoPage == 1) {
         drawText({12, 42, 296, 16}, "Room " + groupCode, 2, TFT_WHITE);
         drawText({12, 80, 296, 8}, "Password", 1, TFT_WHITE);
         drawText({12, 101, 296, 24}, groupPassword, 3, a);
-    } else if (page % 4 == 2) {
+    } else if (infoPage == 2) {
         drawText({12, 48, 296, 16}, "Accent", 2, TFT_WHITE);
         drawText({12, 82, 296, 24}, accentName, 3, a);
         drawText({12, 126, 296, 8}, "Change from phone setup", 1, TFT_WHITE);
